@@ -1,4 +1,5 @@
 "use client"
+alert("서버로 데이터를 보냅니다!"); // 👈 브라우저에 알림창을 띄워버립니다.
 export const runtime = "edge";
 import { getLeaderboardViaApi } from "@/lib/googleSheets";
 import { useState, useCallback, useEffect, useMemo } from "react"
