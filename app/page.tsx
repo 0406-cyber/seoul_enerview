@@ -1,4 +1,5 @@
 "use client"
+export const runtime = "edge";
 import { getLeaderboardViaApi } from "@/lib/googleSheets";
 import { useState, useCallback, useEffect, useMemo } from "react"
 import { Leaf } from "lucide-react"
