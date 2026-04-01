@@ -82,11 +82,13 @@ export default function Home() {
     const loadLeaderboard = async () => {
       try {
         const data = await getLeaderboardViaApi();
+        
         if (data && data.length > 0) {
           setRemoteUsers(data);
         }
-      } catch (error) {
-        console.error("리더보드 로드 실패:", error);
+      } catch (e: any) {
+  // 500 에러 대신 화면에 진짜 에러 이유를 찍어버립니다.
+        return <div className="p-10 bg-red-100 text-red-700">에러 발생: {e.message}</div>;
       }
     };
     loadLeaderboard();
