@@ -1,7 +1,7 @@
 "use client"
 
-export const runtime = "edge";
-import { getLeaderboardViaApi } from "@/lib/googleSheets";
+// ❌ export const runtime = "edge"; (삭제됨: Cloudflare 서버 액션 충돌 방지)
+
 import { useState, useCallback, useEffect, useMemo } from "react"
 import { Leaf } from "lucide-react"
 import { toast } from "sonner"
@@ -16,6 +16,7 @@ import {
   saveUsage,
   loginUser,
   updateUserPoints,
+  getLeaderboardViaApi,
 } from "@/lib/googleSheets"
 import {
   getGemmaAdvice,
@@ -46,15 +47,14 @@ interface LeaderboardEntry {
   streak: number
 }
 
-
 export default function Home() {
-// Home 함수 내부 상단
   const [nickname, setNickname] = useState<string | null>(null)
   const [isOnboarded, setIsOnboarded] = useState(false)
   const [activeTab, setActiveTab] = useState("analysis")
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
   const [adminPassword, setAdminPassword] = useState("")
-  // [추가] 실시간 리더보드 데이터를 저장할 상태
+  
+  // 실시간 리더보드 데이터를 저장할 상태
   const [remoteUsers, setRemoteUsers] = useState<Omit<LeaderboardEntry, "rank">[]>([])
 
   const [electricityUsage, setElectricityUsage] = useState("")
@@ -68,32 +68,28 @@ export default function Home() {
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [points, setPoints] = useState(100)
-  const [certificationHistory, setCertificationHistory] = useState<
-    CertificationHistory[]
-  >([])
+  const [certificationHistory, setCertificationHistory] = useState<CertificationHistory[]>([])
 
   useEffect(() => {
     if (!nickname) return
     setUsageHistory(loadUsageHistory(nickname))
   }, [nickname])
-    // 기존 useEffect들 아래에 추가
 
+  // ✅ 수정됨: useEffect 안에서 return JSX를 하면 에러가 나므로 에러는 toast로 처리합니다.
   useEffect(() => {
     const loadLeaderboard = async () => {
       try {
         const data = await getLeaderboardViaApi();
-        
         if (data && data.length > 0) {
           setRemoteUsers(data);
         }
       } catch (e: any) {
-  // 500 에러 대신 화면에 진짜 에러 이유를 찍어버립니다.
-        return <div className="p-10 bg-red-100 text-red-700">에러 발생: {e.message}</div>;
+        console.error("리더보드 로드 에러:", e.message);
+        toast.error("리더보드를 불러오지 못했습니다: " + e.message);
       }
     };
     loadLeaderboard();
   }, []);
-
 
   const chartData = useMemo(
     () =>
@@ -113,13 +109,12 @@ export default function Home() {
       streak: 1,
     };
     
-    // [수정] mockOtherUsers 대신 remoteUsers를 사용
     const allUsers = [...remoteUsers, currentUser]; 
     
     return allUsers
       .sort((a, b) => b.points - a.points)
       .map((user, index) => ({ ...user, rank: index + 1 }));
-  }, [nickname, points, remoteUsers]); // remoteUsers가 바뀔 때마다 다시 계산
+  }, [nickname, points, remoteUsers]);
 
   const handleOnboardingComplete = useCallback(async (name: string) => {
     setNickname(name)
@@ -128,8 +123,8 @@ export default function Home() {
     setUsageHistory(loadUsageHistory(name))
     try {
       await loginUser(name)
-    } catch {
-      /* 시트 미설정 시 무시 */
+    } catch (e: any) {
+      console.error("온보딩 로그인 에러:", e.message);
     }
   }, [])
 
@@ -142,7 +137,6 @@ export default function Home() {
     }
   }, [adminPassword])
 
-  // [추가] 관리자 로그아웃 처리 함수
   const handleAdminLogout = useCallback(() => {
     setIsAdminAuthenticated(false)
     setNickname(null)
@@ -150,35 +144,38 @@ export default function Home() {
     setAdminPassword("")
   }, [])
 
+  // ✅ 수정됨: 서버 액션(computeCo2Kg 등) 호출 시 에러가 나면 앱이 멈추지 않고 에러 메시지를 보여줍니다.
   const handleCalculate = useCallback(async () => {
-    alert("버튼 클릭됨! 이제 서버로 데이터를 보냅니다.");
     if (!nickname) {
       toast.error("닉네임이 없습니다. 온보딩을 다시 진행해 주세요.")
       return
     }
-    const electricity = parseFloat(electricityUsage) || 0
-    const gas = parseFloat(gasUsage) || 0
-    const emission = await computeCo2Kg(electricity, gas)
-    setCarbonEmission(emission)
-    const row: UsageRecord = {
-      date: new Date().toISOString().slice(0, 10),
-      elec_kwh: electricity,
-      gas_m3: gas,
-      co2_kg: emission,
-    }
-    const next = appendUsageLocal(nickname, row)
-    setUsageHistory(next)
 
-    setIsSavingUsage(true)
+    setIsSavingUsage(true);
+    
     try {
+      const electricity = parseFloat(electricityUsage) || 0
+      const gas = parseFloat(gasUsage) || 0
+      
+      // 서버 액션 호출 (여기서 에러가 나면 바로 catch로 이동)
+      const emission = await computeCo2Kg(electricity, gas)
+      setCarbonEmission(emission)
+      
+      const row: UsageRecord = {
+        date: new Date().toISOString().slice(0, 10),
+        elec_kwh: electricity,
+        gas_m3: gas,
+        co2_kg: emission,
+      }
+      const next = appendUsageLocal(nickname, row)
+      setUsageHistory(next)
+
       await saveUsage(nickname, electricity, gas, emission)
       toast.success("데이터가 성공적으로 기록되었습니다!")
-    } catch (e) {
-      toast.error(
-        e instanceof Error
-          ? e.message
-          : "구글 시트 저장에 실패했습니다. 로컬에는 저장되었습니다."
-      )
+      
+    } catch (e: any) {
+      console.error("계산/저장 에러:", e.message);
+      toast.error("서버 처리 중 에러가 발생했습니다: " + e.message);
     } finally {
       setIsSavingUsage(false)
     }
@@ -202,8 +199,8 @@ export default function Home() {
           content: response,
         },
       ])
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "AI 응답 실패")
+    } catch (e: any) {
+      toast.error("AI 응답 실패: " + e.message)
     } finally {
       setIsCoachingLoading(false)
     }
@@ -218,8 +215,7 @@ export default function Home() {
           {
             id: Date.now().toString(),
             role: "assistant",
-            content:
-              "먼저 '에너지 사용 분석' 탭에서 데이터를 기록해주세요.",
+            content: "먼저 '에너지 사용 분석' 탭에서 데이터를 기록해주세요.",
           },
         ])
         return
@@ -239,8 +235,8 @@ export default function Home() {
           content: advice,
         },
       ])
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "조언 요청 실패")
+    } catch (e: any) {
+      toast.error("조언 요청 실패: " + e.message)
     } finally {
       setIsCoachingLoading(false)
     }
@@ -280,8 +276,8 @@ export default function Home() {
 
       try {
         await updateUserPoints(nickname, gainedPoints)
-      } catch {
-        /* 시트 미설정 시 무시 */
+      } catch (e: any) {
+        console.error("포인트 업데이트 에러:", e.message);
       }
 
       setPoints((p) => p + gainedPoints)
@@ -300,169 +296,158 @@ export default function Home() {
       ])
 
       return { ok: true, earnedPoints: gainedPoints }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      toast.error(msg)
-      return { ok: false, error: msg }
+    } catch (e: any) {
+      toast.error(e.message)
+      return { ok: false, error: e.message }
     }
   }, [nickname, selectedImage])
 
   const getTabTitle = () => {
-      switch (activeTab) {
-        case "analysis":
-          return "탄소 분석"
-        case "coaching":
-          return "AI 코칭"
-        case "certification":
-          return "친환경 인증"
-        case "leaderboard":
-          return "리더보드"
-        default:
-          return "Unknown"
-      }
+    switch (activeTab) {
+      case "analysis": return "탄소 분석"
+      case "coaching": return "AI 코칭"
+      case "certification": return "친환경 인증"
+      case "leaderboard": return "리더보드"
+      default: return "Unknown"
     }
+  }
 
-    // 1. 온보딩(첫 접속) 화면
-    if (!isOnboarded) {
-      return <OnboardingScreen onComplete={handleOnboardingComplete} />
-    }
+  if (!isOnboarded) {
+    return <OnboardingScreen onComplete={handleOnboardingComplete} />
+  }
 
-    // 2. [추가] 닉네임이 admin일 때의 화면 처리
-    if (nickname === "admin") {
-      // 2-1. 인증 전 화면 (비밀번호 입력)
-      if (!isAdminAuthenticated) {
-        return (
-          <main className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
-            <div className="bg-card p-8 rounded-2xl border border-border w-full max-w-sm flex flex-col gap-6 shadow-lg">
-              <div>
-                <h2 className="text-xl font-bold text-foreground">🔒 관리자 권한 인증</h2>
-                <p className="text-sm text-muted-foreground mt-2">대시보드에 접근하려면 비밀번호가 필요합니다.</p>
-              </div>
-              <input
-                type="password"
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="관리자 비밀번호 입력"
-                className="bg-background text-foreground border border-border rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-primary w-full"
-                onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
-              />
-              <button
-                onClick={handleAdminLogin}
-                className="bg-primary text-primary-foreground font-bold rounded-xl p-3 hover:bg-primary/90 transition w-full"
-              >
-                인증하기
-              </button>
-            </div>
-          </main>
-        )
-      }
-
-      // 2-2. 인증 후 화면 (관리자 대시보드)
+  if (nickname === "admin") {
+    if (!isAdminAuthenticated) {
       return (
-        <main className="min-h-screen bg-background p-4">
-          <div className="max-w-md mx-auto flex flex-col gap-6 mt-8">
-            <div className="flex items-center justify-between">
-              <h1 className="text-2xl font-bold text-foreground">🛠️ 통합 관리자 대시보드</h1>
-              <button 
-                onClick={handleAdminLogout} 
-                className="text-sm bg-secondary text-secondary-foreground px-4 py-2 rounded-xl font-medium"
-              >
-                로그아웃
-              </button>
+        <main className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+          <div className="bg-card p-8 rounded-2xl border border-border w-full max-w-sm flex flex-col gap-6 shadow-lg">
+            <div>
+              <h2 className="text-xl font-bold text-foreground">🔒 관리자 권한 인증</h2>
+              <p className="text-sm text-muted-foreground mt-2">대시보드에 접근하려면 비밀번호가 필요합니다.</p>
             </div>
-            
-            <div className="bg-card p-6 rounded-2xl border border-border flex flex-col gap-4 shadow-sm">
-              <h2 className="text-lg font-bold text-foreground">👥 전체 사용자 기본 현황</h2>
-              <div className="flex justify-between items-center bg-background p-4 rounded-xl border border-border">
-                <span className="text-sm text-muted-foreground">현재 활성 가입자 수</span>
-                <span className="text-lg font-bold text-foreground">
-                  {leaderboard ? Math.max(0, leaderboard.length - 1) : 0} 명
-                </span>
-              </div>
-            </div>
-
-            <div className="bg-primary/10 p-6 rounded-2xl border border-primary/20">
-              <p className="text-sm text-primary font-medium text-center">
-                ※ 전체 사용량 상세 데이터 및 오류 로그(logs)는 연동된 구글 시트에서 직접 확인 및 관리하실 수 있습니다.
-              </p>
-            </div>
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              placeholder="관리자 비밀번호 입력"
+              className="bg-background text-foreground border border-border rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-primary w-full"
+              onKeyDown={(e) => e.key === 'Enter' && handleAdminLogin()}
+            />
+            <button
+              onClick={handleAdminLogin}
+              className="bg-primary text-primary-foreground font-bold rounded-xl p-3 hover:bg-primary/90 transition w-full"
+            >
+              인증하기
+            </button>
           </div>
         </main>
       )
     }
 
-    // 3. 기존 일반 사용자용 화면
     return (
-      <main className="min-h-screen bg-background">
-        <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-lg border-b border-border">
-          <div className="max-w-md mx-auto px-4 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-primary/20 flex items-center justify-center">
-                  <Leaf className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <h1 className="text-lg font-bold text-foreground">
-                    {getTabTitle()}
-                  </h1>
-                  <p className="text-xs text-muted-foreground">
-                    탄소 절약 & AI 에너지 코칭
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 bg-card border border-border rounded-2xl px-3 py-2">
-                <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
-                  <span className="text-xs font-bold text-primary">
-                    {nickname?.charAt(0)}
-                  </span>
-                </div>
-                <span className="text-sm font-medium text-foreground">
-                  {points}P
-                </span>
-              </div>
+      <main className="min-h-screen bg-background p-4">
+        <div className="max-w-md mx-auto flex flex-col gap-6 mt-8">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-foreground">🛠️ 통합 관리자 대시보드</h1>
+            <button 
+              onClick={handleAdminLogout} 
+              className="text-sm bg-secondary text-secondary-foreground px-4 py-2 rounded-xl font-medium"
+            >
+              로그아웃
+            </button>
+          </div>
+          
+          <div className="bg-card p-6 rounded-2xl border border-border flex flex-col gap-4 shadow-sm">
+            <h2 className="text-lg font-bold text-foreground">👥 전체 사용자 기본 현황</h2>
+            <div className="flex justify-between items-center bg-background p-4 rounded-xl border border-border">
+              <span className="text-sm text-muted-foreground">현재 활성 가입자 수</span>
+              <span className="text-lg font-bold text-foreground">
+                {leaderboard ? Math.max(0, leaderboard.length - 1) : 0} 명
+              </span>
             </div>
           </div>
-        </header>
 
-        <div className="max-w-md mx-auto px-4 py-6">
-          {activeTab === "analysis" && (
-            <AnalysisTab
-              electricityUsage={electricityUsage}
-              gasUsage={gasUsage}
-              onElectricityChange={setElectricityUsage}
-              onGasChange={setGasUsage}
-              onCalculate={handleCalculate}
-              carbonEmission={carbonEmission}
-              chartData={chartData}
-              isSaving={isSavingUsage}
-            />
-          )}
-
-          {activeTab === "coaching" && (
-            <CoachingTab
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              onRequestAdvice={handleRequestAdvice}
-              isLoading={isCoachingLoading}
-            />
-          )}
-
-          {activeTab === "certification" && (
-            <CertificationTab
-              selectedImage={selectedImage}
-              onImageSelect={setSelectedImage}
-              onCertify={handleCertify}
-              points={points}
-              certificationHistory={certificationHistory}
-            />
-          )}
-
-          {activeTab === "leaderboard" && (
-            <LeaderboardTab entries={leaderboard} currentUserId="current" />
-          )}
+          <div className="bg-primary/10 p-6 rounded-2xl border border-primary/20">
+            <p className="text-sm text-primary font-medium text-center">
+              ※ 전체 사용량 상세 데이터 및 오류 로그(logs)는 연동된 구글 시트에서 직접 확인 및 관리하실 수 있습니다.
+            </p>
+          </div>
         </div>
-
-        <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
       </main>
     )
-  } // <--- ✅ 무조건 여기가 파일의 맨 마지막 줄이어야 합니다!!!
+  }
+
+  return (
+    <main className="min-h-screen bg-background">
+      <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-lg border-b border-border">
+        <div className="max-w-md mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-primary/20 flex items-center justify-center">
+                <Leaf className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-foreground">
+                  {getTabTitle()}
+                </h1>
+                <p className="text-xs text-muted-foreground">
+                  탄소 절약 & AI 에너지 코칭
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 bg-card border border-border rounded-2xl px-3 py-2">
+              <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
+                <span className="text-xs font-bold text-primary">
+                  {nickname?.charAt(0)}
+                </span>
+              </div>
+              <span className="text-sm font-medium text-foreground">
+                {points}P
+              </span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-md mx-auto px-4 py-6">
+        {activeTab === "analysis" && (
+          <AnalysisTab
+            electricityUsage={electricityUsage}
+            gasUsage={gasUsage}
+            onElectricityChange={setElectricityUsage}
+            onGasChange={setGasUsage}
+            onCalculate={handleCalculate}
+            carbonEmission={carbonEmission}
+            chartData={chartData}
+            isSaving={isSavingUsage}
+          />
+        )}
+
+        {activeTab === "coaching" && (
+          <CoachingTab
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            onRequestAdvice={handleRequestAdvice}
+            isLoading={isCoachingLoading}
+          />
+        )}
+
+        {activeTab === "certification" && (
+          <CertificationTab
+            selectedImage={selectedImage}
+            onImageSelect={setSelectedImage}
+            onCertify={handleCertify}
+            points={points}
+            certificationHistory={certificationHistory}
+          />
+        )}
+
+        {activeTab === "leaderboard" && (
+          <LeaderboardTab entries={leaderboard} currentUserId="current" />
+        )}
+      </div>
+
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+    </main>
+  )
+}
