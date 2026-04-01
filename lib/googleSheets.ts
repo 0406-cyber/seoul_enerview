@@ -29,7 +29,7 @@ function todayYmd(): string {
 async function getAccessToken() {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   // .env 파일에서 읽어올 때 문자열로 처리된 \n 기호를 실제 줄바꿈 문자로 변환합니다.
-  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"); 
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
   const spreadsheetId = process.env.NEXT_PUBLIC_GOOGLE_SHEETS_SPREADSHEET_ID;
 
   if (!clientEmail || !privateKey || !spreadsheetId) {
