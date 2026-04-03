@@ -6,9 +6,10 @@ import { Heart, ImagePlus, Crown, Send, X } from "lucide-react"
 import {
   CitizenPost,
   loadClaims,
-  loadFeed,
+  loadFeedAsync,       // ⭐️ 변경됨
   markClaimed,
-  saveFeed,
+  saveNewPostAsync,    // ⭐️ 변경됨
+  updateLikesAsync,    // ⭐️ 추가됨
   weekKey,
 } from "@/lib/citizen-feed-storage"
 
@@ -32,11 +33,20 @@ export function CitizenFeedTab({
   const [title, setTitle] = useState("")
   const [body, setBody] = useState("")
   const [imageDataUrl, setImageDataUrl] = useState<string | undefined>(undefined)
+  const [isSubmitting, setIsSubmitting] = useState(false) // ⭐️ 제출 중 방지 상태
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // ⭐️ 비동기 피드 불러오기
   useEffect(() => {
-    const p = loadFeed()
-    setPosts(p.sort((a, b) => b.createdAt - a.createdAt))
+    const fetchPosts = async () => {
+      try {
+        const p = await loadFeedAsync()
+        setPosts(p.sort((a, b) => b.createdAt - a.createdAt))
+      } catch (error) {
+        console.error("피드 불러오기 실패:", error)
+      }
+    }
+    fetchPosts()
   }, [])
 
   const stats = useMemo(() => {
@@ -74,15 +84,13 @@ export function CitizenFeedTab({
     reader.readAsDataURL(file)
   }
 
-  const persist = (next: CitizenPost[]) => {
-    setPosts(next.sort((a, b) => b.createdAt - a.createdAt))
-    saveFeed(next)
-  }
-
-  const handlePost = () => {
+  // ⭐️ 비동기 새 글 작성
+  const handlePost = async () => {
     const t = clampText(title, 60)
     const b = clampText(body, 400)
-    if (!t || !b) return
+    if (!t || !b || isSubmitting) return
+
+    setIsSubmitting(true)
 
     const newPost: CitizenPost = {
       id: uid(),
@@ -93,23 +101,47 @@ export function CitizenFeedTab({
       createdAt: Date.now(),
       likedBy: [],
     }
-    persist([newPost, ...posts])
+    
+    // 화면에 먼저 반영 (낙관적 업데이트)
+    setPosts(prev => [newPost, ...prev].sort((a, b) => b.createdAt - a.createdAt))
     setTitle("")
     setBody("")
     setImageDataUrl(undefined)
+
+    try {
+      // 구글 시트에 저장
+      await saveNewPostAsync(newPost)
+    } catch (e) {
+      console.error("새 글 저장 실패:", e)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const toggleLike = (postId: string) => {
+  // ⭐️ 비동기 좋아요 토글
+  const toggleLike = async (postId: string) => {
+    const targetPost = posts.find((p) => p.id === postId)
+    if (!targetPost) return
+
+    const likedBy = Array.isArray(targetPost.likedBy) ? targetPost.likedBy : []
+    const hasLiked = likedBy.includes(nickname)
+    const updatedLikedBy = hasLiked
+      ? likedBy.filter((u) => u !== nickname)
+      : [...likedBy, nickname]
+
+    // 화면에 먼저 반영 (낙관적 업데이트)
     const next = posts.map((p) => {
       if (p.id !== postId) return p
-      const likedBy = Array.isArray(p.likedBy) ? p.likedBy : []
-      const hasLiked = likedBy.includes(nickname)
-      const updated = hasLiked
-        ? likedBy.filter((u) => u !== nickname)
-        : [...likedBy, nickname]
-      return { ...p, likedBy: updated }
+      return { ...p, likedBy: updatedLikedBy }
     })
-    persist(next)
+    setPosts(next.sort((a, b) => b.createdAt - a.createdAt))
+
+    try {
+      // 구글 시트에 좋아요 내역 반영
+      await updateLikesAsync(postId, updatedLikedBy)
+    } catch (e) {
+      console.error("좋아요 업데이트 실패:", e)
+    }
   }
 
   const claimWeeklyReward = () => {
@@ -217,11 +249,11 @@ export function CitizenFeedTab({
 
         <button
           onClick={handlePost}
-          disabled={!title.trim() || !body.trim()}
+          disabled={!title.trim() || !body.trim() || isSubmitting}
           className="w-full bg-primary text-primary-foreground rounded-2xl py-4 text-lg font-semibold transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
         >
           <Send className="w-5 h-5" />
-          게시하기
+          {isSubmitting ? "게시 중..." : "게시하기"}
         </button>
       </div>
 
@@ -273,4 +305,3 @@ export function CitizenFeedTab({
     </div>
   )
 }
-
