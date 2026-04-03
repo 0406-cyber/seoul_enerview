@@ -21,6 +21,22 @@ function todayYmd(): string {
   return `${y}-${m}-${day}`;
 }
 
+// 안전하게 정수로 변환하는 헬퍼 함수 (NaN 방지)
+function safeParseInt(val: any): number {
+  if (val === undefined || val === null || val === "") return 0;
+  const cleaned = String(val).replace(/[^0-9.-]/g, "");
+  const parsed = parseInt(cleaned, 10);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+// 안전하게 소수로 변환하는 헬퍼 함수 (NaN 방지)
+function safeParseFloat(val: any): number {
+  if (val === undefined || val === null || val === "") return 0;
+  const cleaned = String(val).replace(/[^0-9.-]/g, "");
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
 // ==========================================
 // 🚀 Edge 호환용 경량화 JWT(토큰) 발급기
 // ==========================================
@@ -113,7 +129,12 @@ export async function saveUsage(username: string, elec: number, gas: number, co2
   const range = encodeURIComponent("usage!A:E");
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`;
 
-  const values = [[username, todayYmd(), String(elec), String(gas), String(co2)]];
+  // NaN 값이 들어오면 0으로 처리하여 시트 손상 방지
+  const safeElec = isNaN(elec) ? 0 : elec;
+  const safeGas = isNaN(gas) ? 0 : gas;
+  const safeCo2 = isNaN(co2) ? 0 : co2;
+
+  const values = [[username, todayYmd(), String(safeElec), String(safeGas), String(safeCo2.toFixed(2))]];
 
   const response = await fetch(url, {
     method: "POST",
@@ -132,7 +153,10 @@ export async function loginUser(username: string): Promise<void> {
   const { token, spreadsheetId } = await getAccessToken();
   const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!A:C`;
   
-  const getRes = await fetch(getUrl, { headers: { Authorization: `Bearer ${token}` } });
+  const getRes = await fetch(getUrl, { 
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store' 
+  });
   const data = await getRes.json();
   const rows = data.values || [];
 
@@ -142,7 +166,7 @@ export async function loginUser(username: string): Promise<void> {
   for (let i = 0; i < rows.length; i++) {
     if (rows[i][0] === username) {
       rowIndex = i + 1;
-      currentLogins = Number(rows[i][1]) || 0;
+      currentLogins = safeParseInt(rows[i][1]); // 안전한 파싱
       break;
     }
   }
@@ -169,7 +193,10 @@ export async function updateUserPoints(username: string, points: number): Promis
   const { token, spreadsheetId } = await getAccessToken();
   const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!A:C`;
   
-  const getRes = await fetch(getUrl, { headers: { Authorization: `Bearer ${token}` } });
+  const getRes = await fetch(getUrl, { 
+    headers: { Authorization: `Bearer ${token}` },
+    cache: 'no-store'
+  });
   const data = await getRes.json();
   const rows = data.values || [];
 
@@ -179,7 +206,7 @@ export async function updateUserPoints(username: string, points: number): Promis
   for (let i = 0; i < rows.length; i++) {
     if (rows[i][0] === username) {
       rowIndex = i + 1;
-      currentPoints = Number(rows[i][2]) || 0;
+      currentPoints = safeParseInt(rows[i][2]); // 안전한 파싱
       break;
     }
   }
@@ -216,12 +243,8 @@ export async function getLeaderboardViaApi(): Promise<any[]> {
 
     // 데이터 파싱 로직 강화
     return rows.slice(1).map((row: any, index: number) => {
-      // row[2]가 포인트 컬럼(C)인지 확인하고, 숫자 외 문자 제거 후 변환
-      const rawPoints = String(row[2] || "0").replace(/[^0-9]/g, "");
-      const p = parseInt(rawPoints, 10) || 0;
-      
-      const rawLogins = String(row[1] || "0").replace(/[^0-9]/g, "");
-      const logins = parseInt(rawLogins, 10) || 0;
+      const p = safeParseInt(row[2]);
+      const logins = safeParseInt(row[1]);
 
       return {
         id: `user-${index}`,
