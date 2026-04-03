@@ -272,3 +272,120 @@ export async function getLeaderboardViaApi(): Promise<any[]> {
     throw new Error(error.message);
   }
 }
+
+/** 포인트 상세 내역 저장 (logs 탭) */
+export async function savePointLog(username: string, description: string, amount: number): Promise<void> {
+  const { token, spreadsheetId } = await getAccessToken();
+  const range = encodeURIComponent("logs!A:D");
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`;
+
+  const dateStr = new Date().toLocaleDateString("ko-KR") + " " + new Date().toLocaleTimeString("ko-KR", {hour: '2-digit', minute:'2-digit'});
+  const values = [[username, dateStr, description, String(amount)]];
+
+  await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ values }),
+  });
+}
+
+/** 포인트 상세 내역 불러오기 (logs 탭) */
+export async function getPointLogs(username: string): Promise<any[]> {
+  try {
+    const { token, spreadsheetId } = await getAccessToken();
+    const range = encodeURIComponent("logs!A:D");
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?t=${Date.now()}`;
+
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, "cache": "no-store" } });
+    const data = await res.json();
+    const rows = data.values || [];
+    if (rows.length <= 1) return [];
+
+    return rows.slice(1)
+      .filter((row: any) => row[0] === username)
+      .map((row: any, index: number) => ({
+        id: `log-${index}`,
+        date: row[1] || "",
+        description: row[2] || "",
+        amount: parseInt(row[3], 10) || 0
+      })).reverse(); // 최신순 정렬
+  } catch (e) {
+    return [];
+  }
+}
+
+/** 피드(시민기자단) 전체 불러오기 (feed 탭) */
+export async function getFeedPostsViaApi(): Promise<any[]> {
+  try {
+    const { token, spreadsheetId } = await getAccessToken();
+    const range = encodeURIComponent("feed!A:G");
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?t=${Date.now()}`;
+
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, "cache": "no-store" } });
+    const data = await res.json();
+    const rows = data.values || [];
+    if (rows.length <= 1) return [];
+
+    return rows.slice(1).map((row: any) => ({
+      id: row[0],
+      author: row[1],
+      title: row[2],
+      body: row[3],
+      imageDataUrl: row[4] || undefined,
+      createdAt: Number(row[5]) || Date.now(),
+      likedBy: row[6] ? JSON.parse(row[6]) : []
+    })).reverse(); // 최신 게시글이 위로 오도록 정렬
+  } catch (e) {
+    return [];
+  }
+}
+
+/** 피드 작성하기 (feed 탭) */
+export async function saveFeedPostViaApi(post: any): Promise<void> {
+  const { token, spreadsheetId } = await getAccessToken();
+  const range = encodeURIComponent("feed!A:G");
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`;
+
+  const values = [[
+    post.id,
+    post.author,
+    post.title,
+    post.body,
+    post.imageDataUrl || "",
+    String(post.createdAt),
+    JSON.stringify(post.likedBy || [])
+  ]];
+
+  await fetch(url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ values }),
+  });
+}
+
+/** 피드 좋아요 업데이트 (feed 탭) */
+export async function updateFeedPostLikesViaApi(postId: string, likedBy: string[]): Promise<void> {
+  const { token, spreadsheetId } = await getAccessToken();
+  const range = encodeURIComponent("feed!A:G");
+  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?t=${Date.now()}`;
+  const getRes = await fetch(getUrl, { headers: { Authorization: `Bearer ${token}`, "cache": "no-store" } });
+  const data = await getRes.json();
+  const rows = data.values || [];
+
+  let rowIndex = -1;
+  for(let i = 0; i < rows.length; i++) {
+    if(rows[i][0] === postId) {
+      rowIndex = i + 1;
+      break;
+    }
+  }
+  
+  if (rowIndex !== -1) {
+    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/feed!G${rowIndex}?valueInputOption=USER_ENTERED`;
+    await fetch(updateUrl, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ values: [[JSON.stringify(likedBy)]] })
+    });
+  }
+}
