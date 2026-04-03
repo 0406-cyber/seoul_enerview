@@ -206,22 +206,26 @@ export async function getLeaderboardViaApi(): Promise<any[]> {
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     });
 
-    if (!response.ok) {
-        throw new Error(`서버 응답 에러: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`서버 응답 에러: ${response.status}`);
 
     const data = await response.json();
     const rows = data.values || [];
     
     if (rows.length <= 1) return [];
-    return rows.slice(1).map((row: any, index: number) => ({
-      id: String(index + 1),
-      name: row[0] || "이름 없음",
-      loginCount: Number(row[1]) || 0,
-      points: Number(row[2]) || 0,
-      carbonSaved: Math.floor(Number(row[2]) / 10) || 0,
-      streak: 0
-    })).sort((a: any, b: any) => b.points - a.points);
+
+    // 데이터 파싱 로직 강화
+    return rows.slice(1).map((row: any, index: number) => {
+      const p = parseInt(row[2], 10) || 0; // 포인트 값을 명확히 숫자로 변환
+      return {
+        id: String(index + 1),
+        name: row[0] || "이름 없음",
+        loginCount: parseInt(row[1], 10) || 0,
+        points: p,
+        // page.tsx의 계산 방식(points / 50)과 통일하여 일관성 유지
+        carbonSaved: Math.floor(p / 50), 
+        streak: 1
+      };
+    }).sort((a: any, b: any) => b.points - a.points);
   } catch (error: any) {
     throw new Error(error.message);
   }
