@@ -163,15 +163,15 @@ export async function saveUsage(username: string, elec: number, gas: number, co2
   }
 }
 
+// lib/googleSheets.ts 내부의 해당 함수들을 찾아 아래 내용으로 변경하세요.
+
 /** 로그인 및 횟수 업데이트 */
 export async function loginUser(username: string): Promise<void> {
   const { token, spreadsheetId } = await getAccessToken();
-  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!A:C`;
+  // 캐시 방지를 위해 끝에 타임스탬프 추가
+  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!A:C?t=${Date.now()}`;
   
-  const getRes = await fetch(getUrl, { 
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store' 
-  });
+  const getRes = await fetch(getUrl, { headers: { Authorization: `Bearer ${token}` }});
   const data = await getRes.json();
   const rows = data.values || [];
 
@@ -181,7 +181,7 @@ export async function loginUser(username: string): Promise<void> {
   for (let i = 0; i < rows.length; i++) {
     if (rows[i][0] === username) {
       rowIndex = i + 1;
-      currentLogins = safeParseInt(rows[i][1]); // 안전한 파싱
+      currentLogins = safeParseInt(rows[i][1]); 
       break;
     }
   }
@@ -198,51 +198,40 @@ export async function loginUser(username: string): Promise<void> {
     await fetch(appendUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ values: [[username, 1, 0]] })
+      // 🚨 신규 가입자 초기 포인트 100 적용! (기존 0 -> 100)
+      body: JSON.stringify({ values: [[username, 1, 100]] }) 
     });
   }
 }
-
 /** 포인트 업데이트 */
 /** 포인트 업데이트 로직 보강 */
+/** 포인트 업데이트 */
 export async function updateUserPoints(username: string, points: number): Promise<void> {
-  try {
-    const { token, spreadsheetId } = await getAccessToken();
-    // 전체 사용자 정보를 가져와서 해당 유저의 행을 찾음
-    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!A:C`;
-    const getRes = await fetch(getUrl, { 
-      headers: { Authorization: `Bearer ${token}` },
-      cache: 'no-store'
+  const { token, spreadsheetId } = await getAccessToken();
+  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!A:C?t=${Date.now()}`; // 캐시 방지
+  
+  const getRes = await fetch(getUrl, { headers: { Authorization: `Bearer ${token}` }});
+  const data = await getRes.json();
+  const rows = data.values || [];
+
+  let rowIndex = -1;
+  let currentPoints = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i][0] === username) {
+      rowIndex = i + 1;
+      currentPoints = safeParseInt(rows[i][2]);
+      break;
+    }
+  }
+
+  if (rowIndex !== -1) {
+    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!C${rowIndex}?valueInputOption=USER_ENTERED`;
+    await fetch(updateUrl, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ values: [[currentPoints + points]] })
     });
-    const data = await getRes.json();
-    const rows = data.values || [];
-
-    let rowIndex = -1;
-    let currentPoints = 0;
-
-    for (let i = 0; i < rows.length; i++) {
-      if (rows[i][0] === username) {
-        rowIndex = i + 1;
-        currentPoints = safeNum(rows[i][2]);
-        break;
-      }
-    }
-
-    if (rowIndex !== -1) {
-      const nextPoints = currentPoints + points;
-      const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!C${rowIndex}?valueInputOption=USER_ENTERED`;
-      
-      const updateRes = await fetch(updateUrl, {
-        method: "PUT",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ values: [[String(nextPoints)]] })
-      });
-
-      if (!updateRes.ok) throw new Error("포인트 시트 반영 실패");
-    }
-  } catch (err: any) {
-    console.error("updateUserPoints 에러:", err.message);
-    throw err;
   }
 }
 
@@ -251,12 +240,12 @@ export async function getLeaderboardViaApi(): Promise<any[]> {
   try {
     const { token, spreadsheetId } = await getAccessToken();
     const range = encodeURIComponent("users!A:C");
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}`;
+    // 캐시를 완벽하게 무효화하는 타임스탬프 쿼리
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?t=${Date.now()}`;
 
     const response = await fetch(url, {
       method: "GET",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      cache: 'no-store' // 최신 데이터를 위해 캐시 방지
     });
 
     if (!response.ok) throw new Error(`서버 응답 에러: ${response.status}`);
@@ -266,7 +255,6 @@ export async function getLeaderboardViaApi(): Promise<any[]> {
     
     if (rows.length <= 1) return [];
 
-    // 데이터 파싱 로직 강화
     return rows.slice(1).map((row: any, index: number) => {
       const p = safeParseInt(row[2]);
       const logins = safeParseInt(row[1]);
@@ -276,12 +264,11 @@ export async function getLeaderboardViaApi(): Promise<any[]> {
         name: row[0] || "이름 없음",
         loginCount: logins,
         points: p,
-        carbonSaved: Math.floor(p / 50), // 탄소 절감량 계산식 통일
+        carbonSaved: Math.floor(p / 50),
         streak: 1
       };
     }).sort((a: any, b: any) => b.points - a.points);
   } catch (error: any) {
-    console.error("Leaderboard Fetch Error:", error.message);
     throw new Error(error.message);
   }
 }
