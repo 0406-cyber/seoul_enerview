@@ -114,8 +114,8 @@ export default function Home() {
       })),
     [usageHistory]
   )
-
-const leaderboard: LeaderboardEntry[] = useMemo(() => {
+  
+  const leaderboard: LeaderboardEntry[] = useMemo(() => {
     const currentUser: Omit<LeaderboardEntry, "rank"> = {
       id: "current",
       name: nickname || "나",
@@ -123,12 +123,12 @@ const leaderboard: LeaderboardEntry[] = useMemo(() => {
       carbonSaved: Math.floor(points / 50),
       streak: 1,
     };
-    
+
     // 서버 데이터에서 현재 사용자와 동일한 닉네임 제거 (중복 방지)
     const filteredRemoteUsers = remoteUsers.filter(user => user.name !== nickname);
-    
-    const allUsers = [...filteredRemoteUsers, currentUser]; 
-    
+
+    const allUsers = [...filteredRemoteUsers, currentUser];
+
     return allUsers
       .sort((a, b) => b.points - a.points)
       .map((user, index) => ({ ...user, rank: index + 1 }));
