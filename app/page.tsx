@@ -1,9 +1,9 @@
 "use client"
 
-// ❌ export const runtime = "edge"; (삭제됨: Cloudflare 서버 액션 충돌 방지)
 export const runtime = "edge";
+// lucide-react에서 닫기 버튼용 X 아이콘 추가
 import { useState, useCallback, useEffect, useMemo } from "react"
-import { Leaf } from "lucide-react"
+import { Leaf, X } from "lucide-react" 
 import { toast } from "sonner"
 import { BottomNav } from "@/components/bottom-nav"
 import { AnalysisTab } from "@/components/tabs/analysis-tab"
@@ -51,8 +51,15 @@ interface LeaderboardEntry {
   streak: number
 }
 
+// 포인트 내역용 인터페이스 추가
+interface PointHistoryItem {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+}
+
 export default function Home() {
-  // 1. 컴포넌트가 그려지기 전에 동기적으로 로컬 스토리지를 확인 (팝업 깜빡임 원천 차단)
   const [nickname, setNickname] = useState<string | null>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("eco_nickname");
@@ -92,23 +99,50 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [certificationHistory, setCertificationHistory] = useState<CertificationHistory[]>([])
 
-  // 2. 초기 로드 시 서버 데이터 동기화
+  // 포인트 내역 상태 관리
+  const [pointHistory, setPointHistory] = useState<PointHistoryItem[]>([])
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
+
+  // 포인트 기록 공통 헬퍼 함수
+  const recordPoint = useCallback((userName: string, desc: string, amt: number) => {
+    setPointHistory(prev => {
+      const newItem: PointHistoryItem = {
+        id: Date.now().toString() + Math.random().toString(36).substring(7),
+        date: new Date().toLocaleDateString("ko-KR") + " " + new Date().toLocaleTimeString("ko-KR", {hour: '2-digit', minute:'2-digit'}),
+        description: desc,
+        amount: amt
+      };
+      const next = [newItem, ...prev];
+      localStorage.setItem(`eco_point_history_${userName}`, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  // 초기 로드 시 서버 데이터 및 포인트 내역 동기화
   useEffect(() => {
     if (!nickname) return;
 
-    // 로컬 히스토리 로드
     setUsageHistory(loadUsageHistory(nickname));
+
+    // 포인트 내역 로드
+    const savedPointHistory = localStorage.getItem(`eco_point_history_${nickname}`);
+    if (savedPointHistory) {
+      try {
+        setPointHistory(JSON.parse(savedPointHistory));
+      } catch (e) {
+        console.error("포인트 내역 파싱 오류:", e);
+      }
+    }
 
     const syncWithServer = async () => {
       try {
         const remoteData = await getLeaderboardViaApi();
         setRemoteUsers(remoteData);
         
-        // 내 데이터를 찾아서 서버 포인트로 덮어쓰기
         const myData = remoteData.find((u) => u.name === nickname);
         if (myData && myData.points >= 0) {
           setPoints(myData.points);
-          savePoints(nickname, myData.points); // 로컬에도 서버 점수 반영
+          savePoints(nickname, myData.points); 
         }
       } catch (e: any) {
         console.error("서버 데이터 동기화 에러:", e.message);
@@ -119,7 +153,6 @@ export default function Home() {
     syncWithServer();
   }, [nickname]);
 
-  // 포인트 변경 시 로컬 스토리지에 자동 저장
   useEffect(() => {
     if (!nickname) return;
     savePoints(nickname, points);
@@ -143,7 +176,6 @@ export default function Home() {
       streak: 1,
     };
 
-    // 서버 데이터에서 현재 사용자와 동일한 닉네임 제거 (중복 방지)
     const otherUsers = remoteUsers.filter(user => user.name !== nickname);
     const allUsers = [...otherUsers, currentUser]; 
     
@@ -152,40 +184,39 @@ export default function Home() {
       .map((user, index) => ({ ...user, rank: index + 1 }));
   }, [nickname, points, remoteUsers]);
     
-  // 3. 온보딩 완료 시 로직 (기존 유저 여부 확인)
   const handleOnboardingComplete = useCallback(async (name: string) => {
     localStorage.setItem("eco_nickname", name);
     setNickname(name);
     setIsOnboarded(true);
   
     try {
-      // 서버에서 해당 유저의 기존 점수가 있는지 확인
       const remoteData = await getLeaderboardViaApi();
       const existingUser = remoteData.find(u => u.name === name);
       
       if (existingUser) {
-        // 기존 유저라면 서버 점수 동기화
         setPoints(existingUser.points);
         toast.success(`${name}님, 다시 오신 것을 환영합니다!`);
       } else {
-        // 신규 유저라면 100P 부여
         setPoints(100);
+        recordPoint(name, "신규 가입 보너스", 100); // ⭐️ 신규 가입 포인트 기록
         toast.success("가입을 축하합니다! 시작 포인트 100P가 지급되었습니다.");
       }
       
-      // 구글 시트에 로그인/신규가입 기록
       await loginUser(name);
     } catch (e: any) {
       console.error("로그인 동기화 에러:", e.message);
-      setPoints(100); // 에러시 기본값 처리
+      setPoints(100); 
     }
     
     setUsageHistory(loadUsageHistory(name));
-  }, []);
+  }, [recordPoint]);
 
-  const awardPoints = useCallback((delta: number, _reason: string) => {
-    setPoints((p) => p + delta)
-  }, [])
+  const awardPoints = useCallback((delta: number, reason: string) => {
+    setPoints((p) => p + delta);
+    if (nickname) {
+      recordPoint(nickname, reason, delta); // ⭐️ 활동 내역 기록
+    }
+  }, [nickname, recordPoint])
 
   const handleAdminLogin = useCallback(() => {
     if (adminPassword === "seoul1234") {
@@ -346,6 +377,10 @@ export default function Home() {
         
         setPoints((p) => p + gainedPoints)
         const description = result.description || "에너지 절약 행동"
+        
+        // ⭐️ 포인트 내역에 기록
+        recordPoint(nickname, description, gainedPoints);
+
         setCertificationHistory((prev) => [
           {
             id: Date.now().toString(),
@@ -370,7 +405,7 @@ export default function Home() {
       toast.error(e.message)
       return { ok: false, error: e.message }
     }
-  }, [nickname, selectedImage])
+  }, [nickname, selectedImage, recordPoint])
 
   const getTabTitle = () => {
     switch (activeTab) {
@@ -451,12 +486,11 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-background">
+    <main className="min-h-screen bg-background relative">
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-lg border-b border-border">
         <div className="max-w-md mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             
-            {/* 1. 왼쪽 영역: 로고 및 타이틀 */}
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-primary/20 flex items-center justify-center">
                 <Leaf className="w-5 h-5 text-primary" />
@@ -471,11 +505,14 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 2. 오른쪽 영역: 포인트와 로그아웃 버튼을 하나로 묶음 */}
             <div className="flex items-center gap-2">
               
-              {/* 포인트 배지 */}
-              <div className="flex items-center gap-2 bg-card border border-border rounded-2xl px-3 py-2">
+              {/* ⭐️ 클릭 시 포인트 내역 모달 열림 */}
+              <button 
+                onClick={() => setIsHistoryModalOpen(true)}
+                className="flex items-center gap-2 bg-card border border-border rounded-2xl px-3 py-2 hover:bg-secondary transition-colors"
+                title="포인트 내역 보기"
+              >
                 <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
                   <span className="text-xs font-bold text-primary">
                     {nickname?.charAt(0)}
@@ -484,9 +521,8 @@ export default function Home() {
                 <span className="text-sm font-medium text-foreground">
                   {points}P
                 </span>
-              </div>
+              </button>
 
-              {/* 로그아웃 버튼 */}
               <button 
                 onClick={handleLogout}
                 className="p-2 hover:bg-secondary rounded-xl transition-colors text-muted-foreground"
@@ -555,6 +591,44 @@ export default function Home() {
       </div>
 
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* ⭐️ 포인트 내역 모달 */}
+      {isHistoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="bg-card w-full max-w-sm rounded-3xl shadow-xl flex flex-col max-h-[80vh] border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between p-5 border-b border-border bg-background">
+              <h2 className="text-lg font-bold text-foreground">포인트 내역</h2>
+              <button 
+                onClick={() => setIsHistoryModalOpen(false)} 
+                className="p-2 bg-secondary/50 hover:bg-secondary rounded-full transition-colors text-muted-foreground"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-3 bg-background">
+              {pointHistory.length === 0 ? (
+                <div className="text-center text-muted-foreground py-10 flex flex-col items-center gap-2">
+                  <span className="text-3xl">🫙</span>
+                  <p>아직 적립된 포인트가 없습니다.</p>
+                </div>
+              ) : (
+                pointHistory.map(item => (
+                  <div key={item.id} className="flex items-center justify-between p-4 rounded-2xl border border-border bg-card">
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm font-bold text-foreground">{item.description}</span>
+                      <span className="text-xs text-muted-foreground">{item.date}</span>
+                    </div>
+                    <span className={`font-bold text-lg ${item.amount > 0 ? 'text-primary' : 'text-red-500'}`}>
+                      {item.amount > 0 ? '+' : ''}{item.amount}P
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
     </main>
   )
 }
