@@ -13,6 +13,11 @@ export async function computeCo2Kg(elecKwh: number, gasM3: number): Promise<numb
   return elecKwh * 0.4781 + gasM3 * 2.176;
 }
 
+function safeNum(val: any): number {
+  const n = parseFloat(String(val).replace(/[^0-9.-]/g, ""));
+  return isNaN(n) ? 0 : n;
+}
+
 function todayYmd(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -125,27 +130,37 @@ async function getAccessToken() {
 
 /** 데이터 저장 기능 */
 export async function saveUsage(username: string, elec: number, gas: number, co2: number): Promise<void> {
-  const { token, spreadsheetId } = await getAccessToken();
-  const range = encodeURIComponent("usage!A:E");
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`;
+  try {
+    const { token, spreadsheetId } = await getAccessToken();
+    const range = encodeURIComponent("usage!A:E");
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`;
 
-  // NaN 값이 들어오면 0으로 처리하여 시트 손상 방지
-  const safeElec = isNaN(elec) ? 0 : elec;
-  const safeGas = isNaN(gas) ? 0 : gas;
-  const safeCo2 = isNaN(co2) ? 0 : co2;
+    // 숫자를 문자열로 안전하게 변환하여 전송
+    const values = [[
+      username, 
+      todayYmd(), 
+      String(safeNum(elec)), 
+      String(safeNum(gas)), 
+      String(safeNum(co2.toFixed(2)))
+    ]];
 
-  const values = [[username, todayYmd(), String(safeElec), String(safeGas), String(safeCo2.toFixed(2))]];
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ values }),
+    });
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ values }),
-  });
-
-  if (!response.ok) throw new Error("구글 시트 저장 실패");
+    if (!response.ok) {
+      const errorDetail = await response.text();
+      throw new Error(`시트 저장 실패: ${errorDetail}`);
+    }
+  } catch (err: any) {
+    console.error("saveUsage 에러 상세:", err.message);
+    throw err;
+  }
 }
 
 /** 로그인 및 횟수 업데이트 */
@@ -189,35 +204,45 @@ export async function loginUser(username: string): Promise<void> {
 }
 
 /** 포인트 업데이트 */
+/** 포인트 업데이트 로직 보강 */
 export async function updateUserPoints(username: string, points: number): Promise<void> {
-  const { token, spreadsheetId } = await getAccessToken();
-  const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!A:C`;
-  
-  const getRes = await fetch(getUrl, { 
-    headers: { Authorization: `Bearer ${token}` },
-    cache: 'no-store'
-  });
-  const data = await getRes.json();
-  const rows = data.values || [];
-
-  let rowIndex = -1;
-  let currentPoints = 0;
-
-  for (let i = 0; i < rows.length; i++) {
-    if (rows[i][0] === username) {
-      rowIndex = i + 1;
-      currentPoints = safeParseInt(rows[i][2]); // 안전한 파싱
-      break;
-    }
-  }
-
-  if (rowIndex !== -1) {
-    const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!C${rowIndex}?valueInputOption=USER_ENTERED`;
-    await fetch(updateUrl, {
-      method: "PUT",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ values: [[currentPoints + points]] })
+  try {
+    const { token, spreadsheetId } = await getAccessToken();
+    // 전체 사용자 정보를 가져와서 해당 유저의 행을 찾음
+    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!A:C`;
+    const getRes = await fetch(getUrl, { 
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store'
     });
+    const data = await getRes.json();
+    const rows = data.values || [];
+
+    let rowIndex = -1;
+    let currentPoints = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i][0] === username) {
+        rowIndex = i + 1;
+        currentPoints = safeNum(rows[i][2]);
+        break;
+      }
+    }
+
+    if (rowIndex !== -1) {
+      const nextPoints = currentPoints + points;
+      const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/users!C${rowIndex}?valueInputOption=USER_ENTERED`;
+      
+      const updateRes = await fetch(updateUrl, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ values: [[String(nextPoints)]] })
+      });
+
+      if (!updateRes.ok) throw new Error("포인트 시트 반영 실패");
+    }
+  } catch (err: any) {
+    console.error("updateUserPoints 에러:", err.message);
+    throw err;
   }
 }
 
