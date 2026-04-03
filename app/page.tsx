@@ -115,7 +115,7 @@ export default function Home() {
     [usageHistory]
   )
 
-  const leaderboard: LeaderboardEntry[] = useMemo(() => {
+const leaderboard: LeaderboardEntry[] = useMemo(() => {
     const currentUser: Omit<LeaderboardEntry, "rank"> = {
       id: "current",
       name: nickname || "나",
@@ -123,6 +123,16 @@ export default function Home() {
       carbonSaved: Math.floor(points / 50),
       streak: 1,
     };
+    
+    // 서버 데이터에서 현재 사용자와 동일한 닉네임 제거 (중복 방지)
+    const filteredRemoteUsers = remoteUsers.filter(user => user.name !== nickname);
+    
+    const allUsers = [...filteredRemoteUsers, currentUser]; 
+    
+    return allUsers
+      .sort((a, b) => b.points - a.points)
+      .map((user, index) => ({ ...user, rank: index + 1 }));
+  }, [nickname, points, remoteUsers]);
     
     const allUsers = [...remoteUsers, currentUser]; 
     
@@ -261,8 +271,7 @@ export default function Home() {
       setIsCoachingLoading(false)
     }
   }, [usageHistory])
-
-  const handleCertify = useCallback(async (): Promise<{
+const handleCertify = useCallback(async (): Promise<{
     ok: boolean
     earnedPoints?: number
     error?: string
@@ -295,33 +304,37 @@ export default function Home() {
       )
 
       try {
+        // 1. 서버에 포인트 업데이트 먼저 요청
         await updateUserPoints(nickname, gainedPoints)
+        
+        // 2. 서버 통신 성공 시에만 로컬 포인트 및 인증 내역 업데이트
+        setPoints((p) => p + gainedPoints)
+        const description = result.description || "에너지 절약 행동"
+        setCertificationHistory((prev) => [
+          {
+            id: Date.now().toString(),
+            date: new Date()
+              .toLocaleDateString("ko-KR")
+              .replace(/\. /g, ".")
+              .slice(0, -1),
+            type: description,
+            points: gainedPoints,
+          },
+          ...prev,
+        ])
+
+        return { ok: true, earnedPoints: gainedPoints }
       } catch (e: any) {
         console.error("포인트 업데이트 에러:", e.message);
+        toast.error("서버와 동기화하는 중 문제가 발생했습니다. 포인트를 저장할 수 없습니다.");
+        return { ok: false, error: "sync_failed" }
       }
 
-      setPoints((p) => p + gainedPoints)
-      const description = result.description || "에너지 절약 행동"
-      setCertificationHistory((prev) => [
-        {
-          id: Date.now().toString(),
-          date: new Date()
-            .toLocaleDateString("ko-KR")
-            .replace(/\. /g, ".")
-            .slice(0, -1),
-          type: description,
-          points: gainedPoints,
-        },
-        ...prev,
-      ])
-
-      return { ok: true, earnedPoints: gainedPoints }
     } catch (e: any) {
       toast.error(e.message)
       return { ok: false, error: e.message }
     }
   }, [nickname, selectedImage])
-
   const getTabTitle = () => {
     switch (activeTab) {
       case "analysis": return "탄소 분석"
