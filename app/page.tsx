@@ -134,12 +134,7 @@ export default function Home() {
       .map((user, index) => ({ ...user, rank: index + 1 }));
   }, [nickname, points, remoteUsers]);
     
-    const allUsers = [...remoteUsers, currentUser]; 
-    
-    return allUsers
-      .sort((a, b) => b.points - a.points)
-      .map((user, index) => ({ ...user, rank: index + 1 }));
-  }, [nickname, points, remoteUsers]);
+
 
   const handleOnboardingComplete = useCallback(async (name: string) => {
     setNickname(name)
