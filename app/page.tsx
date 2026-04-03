@@ -184,7 +184,14 @@ export default function Home() {
     // 로컬 스토리지에서 사용자 정보 삭제
     localStorage.removeItem("eco_nickname")
   }, [])
-
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem("eco_nickname"); // 저장된 닉네임 삭제
+    setNickname(null);
+    setIsOnboarded(false);
+    setIsAdminAuthenticated(false);
+    setAdminPassword("");
+    toast.success("로그아웃 되었습니다.");
+  }, []);
   // ✅ 수정됨: 서버 액션(computeCo2Kg 등) 호출 시 에러가 나면 앱이 멈추지 않고 에러 메시지를 보여줍니다.
   const handleCalculate = useCallback(async () => {
     if (!nickname) {
@@ -429,6 +436,8 @@ export default function Home() {
       <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-lg border-b border-border">
         <div className="max-w-md mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
+            
+            {/* 1. 왼쪽 영역: 로고 및 타이틀 */}
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-primary/20 flex items-center justify-center">
                 <Leaf className="w-5 h-5 text-primary" />
@@ -442,20 +451,37 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 bg-card border border-border rounded-2xl px-3 py-2">
-              <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
-                <span className="text-xs font-bold text-primary">
-                  {nickname?.charAt(0)}
+
+            {/* 2. 오른쪽 영역: 포인트와 로그아웃 버튼을 하나로 묶음 */}
+            <div className="flex items-center gap-2">
+              
+              {/* 포인트 배지 */}
+              <div className="flex items-center gap-2 bg-card border border-border rounded-2xl px-3 py-2">
+                <div className="w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center">
+                  <span className="text-xs font-bold text-primary">
+                    {nickname?.charAt(0)}
+                  </span>
+                </div>
+                <span className="text-sm font-medium text-foreground">
+                  {points}P
                 </span>
               </div>
-              <span className="text-sm font-medium text-foreground">
-                {points}P
-              </span>
+
+              {/* 로그아웃 버튼 */}
+              <button 
+                onClick={handleLogout}
+                className="p-2 hover:bg-secondary rounded-xl transition-colors text-muted-foreground"
+                title="로그아웃"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              </button>
+
             </div>
+
           </div>
         </div>
       </header>
-
+      
       <div className="max-w-md mx-auto px-4 py-6">
         {activeTab === "analysis" && (
           <AnalysisTab
