@@ -52,15 +52,34 @@ interface LeaderboardEntry {
 }
 
 export default function Home() {
-  const [nickname, setNickname] = useState<string | null>(null)
-  const [isOnboarded, setIsOnboarded] = useState(false)
+  // 1. 컴포넌트가 그려지기 전에 동기적으로 로컬 스토리지를 확인 (팝업 깜빡임 원천 차단)
+  const [nickname, setNickname] = useState<string | null>(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("eco_nickname");
+    }
+    return null;
+  });
+
+  const [isOnboarded, setIsOnboarded] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return !!localStorage.getItem("eco_nickname");
+    }
+    return false;
+  });
+
+  const [points, setPoints] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("eco_nickname");
+      return saved ? loadPoints(saved, 100) : 100;
+    }
+    return 100;
+  });
+
   const [activeTab, setActiveTab] = useState("analysis")
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
   const [adminPassword, setAdminPassword] = useState("")
   
-  // 실시간 리더보드 데이터를 저장할 상태
   const [remoteUsers, setRemoteUsers] = useState<Omit<LeaderboardEntry, "rank">[]>([])
-
   const [electricityUsage, setElectricityUsage] = useState("")
   const [gasUsage, setGasUsage] = useState("")
   const [carbonEmission, setCarbonEmission] = useState<number | null>(null)
@@ -71,89 +90,40 @@ export default function Home() {
   const [isCoachingLoading, setIsCoachingLoading] = useState(false)
 
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
-  const [points, setPoints] = useState(100)
   const [certificationHistory, setCertificationHistory] = useState<CertificationHistory[]>([])
 
+  // 2. 초기 로드 시 서버 데이터 동기화
   useEffect(() => {
-    const initApp = async () => {
-      const savedNickname = localStorage.getItem("eco_nickname");
-      if (savedNickname) {
-        setNickname(savedNickname);
-        // 일단 온보딩은 건너뜀
-        setIsOnboarded(true);
-        
-        try {
-          // 서버에서 리더보드 데이터를 가져와 현재 사용자의 실제 포인트를 찾음
-          const remoteData = await getLeaderboardViaApi();
-          const myData = remoteData.find((u) => u.name === savedNickname);
-          
-          if (myData) {
-            // 서버에 데이터가 있다면 그 값을 최우선으로 사용
-            setPoints(myData.points);
-          } else {
-            // 서버에 없으면 로컬 스토리지 값 사용
-            setPoints(loadPoints(savedNickname, 100));
-          }
-        } catch (e) {
-          console.error("서버 데이터 로드 실패, 로컬 데이터로 대체:", e);
-          setPoints(loadPoints(savedNickname, 100));
-        }
-        setUsageHistory(loadUsageHistory(savedNickname));
-      }
-    };
-    initApp();
-  }, []);
-  
-  useEffect(() => {
-    const savedNickname = localStorage.getItem("eco_nickname");
-    if (savedNickname) {
-      setNickname(savedNickname);
-      setIsOnboarded(true);
-      // 저장된 사용자의 포인트와 기록도 함께 로드
-      setPoints(loadPoints(savedNickname, 100));
-      setUsageHistory(loadUsageHistory(savedNickname));
-    }
-  }, []);
-  useEffect(() => {
-    if (!nickname) return
-    setUsageHistory(loadUsageHistory(nickname))
-  }, [nickname])
+    if (!nickname) return;
 
-  useEffect(() => {
-    if (!nickname) return
-    const p = loadPoints(nickname, 100)
-    setPoints(p)
-  }, [nickname])
+    // 로컬 히스토리 로드
+    setUsageHistory(loadUsageHistory(nickname));
 
-  useEffect(() => {
-    if (!nickname) return
-    savePoints(nickname, points)
-  }, [nickname, points])
-
-  // 기존 useEffect들 아래에 추가
-  useEffect(() => {
-    const savedNickname = localStorage.getItem("eco_nickname")
-    if (savedNickname) {
-      setNickname(savedNickname)
-      setIsOnboarded(true)
-    }
-  }, [])
-
-  // ✅ 수정됨: useEffect 안에서 return JSX를 하면 에러가 나므로 에러는 toast로 처리합니다.
-  useEffect(() => {
-    const loadLeaderboard = async () => {
+    const syncWithServer = async () => {
       try {
-        const data = await getLeaderboardViaApi();
-        if (data && data.length > 0) {
-          setRemoteUsers(data);
+        const remoteData = await getLeaderboardViaApi();
+        setRemoteUsers(remoteData);
+        
+        // 내 데이터를 찾아서 서버 포인트로 덮어쓰기
+        const myData = remoteData.find((u) => u.name === nickname);
+        if (myData && myData.points >= 0) {
+          setPoints(myData.points);
+          savePoints(nickname, myData.points); // 로컬에도 서버 점수 반영
         }
       } catch (e: any) {
-        console.error("리더보드 로드 에러:", e.message);
-        toast.error("리더보드를 불러오지 못했습니다: " + e.message);
+        console.error("서버 데이터 동기화 에러:", e.message);
+        toast.error("리더보드를 불러오지 못했습니다.");
       }
     };
-    loadLeaderboard();
-  }, []);
+    
+    syncWithServer();
+  }, [nickname]);
+
+  // 포인트 변경 시 로컬 스토리지에 자동 저장
+  useEffect(() => {
+    if (!nickname) return;
+    savePoints(nickname, points);
+  }, [nickname, points]);
 
   const chartData = useMemo(
     () =>
@@ -175,7 +145,6 @@ export default function Home() {
 
     // 서버 데이터에서 현재 사용자와 동일한 닉네임 제거 (중복 방지)
     const otherUsers = remoteUsers.filter(user => user.name !== nickname);
-    
     const allUsers = [...otherUsers, currentUser]; 
     
     return allUsers
@@ -183,12 +152,11 @@ export default function Home() {
       .map((user, index) => ({ ...user, rank: index + 1 }));
   }, [nickname, points, remoteUsers]);
     
-
-
+  // 3. 온보딩 완료 시 로직 (기존 유저 여부 확인)
   const handleOnboardingComplete = useCallback(async (name: string) => {
+    localStorage.setItem("eco_nickname", name);
     setNickname(name);
     setIsOnboarded(true);
-    localStorage.setItem("eco_nickname", name);
   
     try {
       // 서버에서 해당 유저의 기존 점수가 있는지 확인
@@ -205,18 +173,17 @@ export default function Home() {
         toast.success("가입을 축하합니다! 시작 포인트 100P가 지급되었습니다.");
       }
       
-      // 로그인 기록 업데이트 (구글 시트)
+      // 구글 시트에 로그인/신규가입 기록
       await loginUser(name);
     } catch (e: any) {
       console.error("로그인 동기화 에러:", e.message);
-      setPoints(loadPoints(name, 100));
+      setPoints(100); // 에러시 기본값 처리
     }
     
     setUsageHistory(loadUsageHistory(name));
   }, []);
 
   const awardPoints = useCallback((delta: number, _reason: string) => {
-    // reason is kept for future audit/log UI
     setPoints((p) => p + delta)
   }, [])
 
@@ -234,19 +201,18 @@ export default function Home() {
     setNickname(null)
     setIsOnboarded(false)
     setAdminPassword("")
-    
-    // 로컬 스토리지에서 사용자 정보 삭제
     localStorage.removeItem("eco_nickname")
   }, [])
+
   const handleLogout = useCallback(() => {
-    localStorage.removeItem("eco_nickname"); // 저장된 닉네임 삭제
+    localStorage.removeItem("eco_nickname");
     setNickname(null);
     setIsOnboarded(false);
     setIsAdminAuthenticated(false);
     setAdminPassword("");
     toast.success("로그아웃 되었습니다.");
   }, []);
-  // ✅ 수정됨: 서버 액션(computeCo2Kg 등) 호출 시 에러가 나면 앱이 멈추지 않고 에러 메시지를 보여줍니다.
+
   const handleCalculate = useCallback(async () => {
     if (!nickname) {
       toast.error("닉네임이 없습니다. 온보딩을 다시 진행해 주세요.")
@@ -259,7 +225,6 @@ export default function Home() {
       const electricity = parseFloat(electricityUsage) || 0
       const gas = parseFloat(gasUsage) || 0
       
-      // 서버 액션 호출 (여기서 에러가 나면 바로 catch로 이동)
       const emission = await computeCo2Kg(electricity, gas)
       setCarbonEmission(emission)
       
@@ -343,6 +308,7 @@ export default function Home() {
       setIsCoachingLoading(false)
     }
   }, [usageHistory])
+
   const handleCertify = useCallback(async (): Promise<{
     ok: boolean
     earnedPoints?: number
@@ -376,10 +342,8 @@ export default function Home() {
       )
 
       try {
-        // 1. 서버에 포인트 업데이트 먼저 요청
         await updateUserPoints(nickname, gainedPoints)
         
-        // 2. 서버 통신 성공 시에만 로컬 포인트 및 인증 내역 업데이트
         setPoints((p) => p + gainedPoints)
         const description = result.description || "에너지 절약 행동"
         setCertificationHistory((prev) => [
@@ -407,6 +371,7 @@ export default function Home() {
       return { ok: false, error: e.message }
     }
   }, [nickname, selectedImage])
+
   const getTabTitle = () => {
     switch (activeTab) {
       case "analysis": return "탄소 분석"
