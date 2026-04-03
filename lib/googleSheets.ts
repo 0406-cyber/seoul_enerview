@@ -204,6 +204,7 @@ export async function getLeaderboardViaApi(): Promise<any[]> {
     const response = await fetch(url, {
       method: "GET",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      cache: 'no-store' // 최신 데이터를 위해 캐시 방지
     });
 
     if (!response.ok) throw new Error(`서버 응답 에러: ${response.status}`);
@@ -215,18 +216,24 @@ export async function getLeaderboardViaApi(): Promise<any[]> {
 
     // 데이터 파싱 로직 강화
     return rows.slice(1).map((row: any, index: number) => {
-      const p = parseInt(row[2], 10) || 0; // 포인트 값을 명확히 숫자로 변환
+      // row[2]가 포인트 컬럼(C)인지 확인하고, 숫자 외 문자 제거 후 변환
+      const rawPoints = String(row[2] || "0").replace(/[^0-9]/g, "");
+      const p = parseInt(rawPoints, 10) || 0;
+      
+      const rawLogins = String(row[1] || "0").replace(/[^0-9]/g, "");
+      const logins = parseInt(rawLogins, 10) || 0;
+
       return {
-        id: String(index + 1),
+        id: `user-${index}`,
         name: row[0] || "이름 없음",
-        loginCount: parseInt(row[1], 10) || 0,
+        loginCount: logins,
         points: p,
-        // page.tsx의 계산 방식(points / 50)과 통일하여 일관성 유지
-        carbonSaved: Math.floor(p / 50), 
+        carbonSaved: Math.floor(p / 50), // 탄소 절감량 계산식 통일
         streak: 1
       };
     }).sort((a: any, b: any) => b.points - a.points);
   } catch (error: any) {
+    console.error("Leaderboard Fetch Error:", error.message);
     throw new Error(error.message);
   }
 }
