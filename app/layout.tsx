@@ -5,6 +5,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from 'sonner'
+import Script from 'next/script' // ✨ 구글 애널리틱스를 위한 Script 컴포넌트 추가
 import './globals.css'
 
 const _geist = Geist({ subsets: ["latin"] });
@@ -49,6 +50,22 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className="font-sans antialiased bg-background text-foreground">
+        
+        {/* ✨ 구글 애널리틱스 (Google Analytics) 태그 시작 */}
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-HKH246CX9C"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-HKH246CX9C');
+          `}
+        </Script>
+        {/* ✨ 구글 애널리틱스 (Google Analytics) 태그 끝 */}
+
         {children}
         <Toaster richColors position="top-center" />
         <Analytics />
