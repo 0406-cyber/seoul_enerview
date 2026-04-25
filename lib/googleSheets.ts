@@ -482,7 +482,7 @@ export async function saveSystemLog(action: string, ip: string, country: string,
     const dateStr = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
     
     // 모바일/PC 대략적 구분
-    const isMobile = /Mobile|Android|iP(hone|od|ad)/I.test(userAgent) ? "Mobile" : "Desktop";
+    const isMobile = /Mobile|Android|iP(hone|od|ad)/i.test(userAgent) ? "Mobile" : "Desktop";
 
     const values = [[dateStr, action, ip, country, isMobile]];
 
