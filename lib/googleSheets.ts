@@ -448,3 +448,27 @@ export async function updateFeedPostLikesViaApi(postId: string, likedBy: string[
     });
   }
 }
+/** 전체 포인트 내역 불러오기 (Admin 용) */
+export async function getAllPointLogs(): Promise<any[]> {
+  try {
+    const { token, spreadsheetId } = await getAccessToken();
+    const range = encodeURIComponent("logs!A:D");
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?t=${Date.now()}`;
+
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, "cache": "no-store" } });
+    const data = await res.json();
+    const rows = data.values || [];
+    if (rows.length <= 1) return [];
+
+    return rows.slice(1)
+      .map((row: any, index: number) => ({
+        id: `log-${index}`,
+        username: row[0] || "알 수 없음", // 첫 번째 열인 사용자 이름을 포함
+        date: row[1] || "",
+        description: row[2] || "",
+        amount: parseInt(row[3], 10) || 0
+      })).reverse(); // 최신순 정렬
+  } catch (e) {
+    return [];
+  }
+}
