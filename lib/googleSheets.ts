@@ -472,3 +472,51 @@ export async function getAllPointLogs(): Promise<any[]> {
     return [];
   }
 }
+/** 시스템 로그 기록 (server_logs 탭) */
+export async function saveSystemLog(action: string, ip: string, country: string, userAgent: string): Promise<void> {
+  try {
+    const { token, spreadsheetId } = await getAccessToken();
+    const range = encodeURIComponent("server_logs!A:E");
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}:append?valueInputOption=USER_ENTERED`;
+
+    const dateStr = new Date().toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
+    
+    // 모바일/PC 대략적 구분
+    const isMobile = /Mobile|Android|iP(hone|od|ad)/I.test(userAgent) ? "Mobile" : "Desktop";
+
+    const values = [[dateStr, action, ip, country, isMobile]];
+
+    await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ values }),
+    });
+  } catch (e) {
+    console.error("시스템 로그 기록 실패", e);
+  }
+}
+
+/** 시스템 로그 불러오기 (Admin 용) */
+export async function getSystemLogs(): Promise<any[]> {
+  try {
+    const { token, spreadsheetId } = await getAccessToken();
+    const range = encodeURIComponent("server_logs!A:E");
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?t=${Date.now()}`;
+
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, "cache": "no-store" } });
+    const data = await res.json();
+    const rows = data.values || [];
+    if (rows.length <= 1) return [];
+
+    return rows.slice(1).map((row: any, index: number) => ({
+      id: `syslog-${index}`,
+      date: row[0] || "",
+      action: row[1] || "",
+      ip: row[2] || "Unknown IP",
+      country: row[3] || "-",
+      device: row[4] || "-"
+    })).reverse(); // 최신순 정렬
+  } catch (e) {
+    return [];
+  }
+}
