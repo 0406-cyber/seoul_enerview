@@ -28,6 +28,10 @@ import {
   getSystemLogs,
   getAllOrders,
   updateOrderStatus,
+  verifyAdminPassword,
+  getAdminUsers,
+  getAdminUserDetail,
+  adjustUserPointsByAdmin,
   getUsageHistory,
   saveCertification,
   getCertifications,
@@ -82,6 +86,35 @@ interface LeaderboardEntry {
   points: number
   carbonSaved: number
   streak: number
+}
+
+interface AdminUserEntry {
+  username: string
+  loginCount: number
+  points: number
+  usageCount: number
+  lastUsageDate: string | null
+  lastCo2Kg: number
+  totalCo2Kg: number
+  pointLogCount: number
+  certificationCount: number
+  orderCount: number
+  pendingOrderCount: number
+}
+
+interface AdminUserDetail {
+  user: AdminUserEntry | null
+  pointLogs: PointHistoryItem[]
+  usageHistory: UsageRecord[]
+  certifications: CertificationHistory[]
+  orders: Array<{
+    id: string
+    itemId: string
+    itemName: string
+    cost: number
+    requestedAt: string
+    status: string
+  }>
 }
 
 function MainContent() {
@@ -141,6 +174,17 @@ function MainContent() {
 
   const [adminOrders, setAdminOrders] = useState<any[]>([])
   const [isAdminOrdersLoading, setIsAdminOrdersLoading] = useState(false)
+
+  const [adminUsers, setAdminUsers] = useState<AdminUserEntry[]>([])
+  const [isAdminUsersLoading, setIsAdminUsersLoading] = useState(false)
+  const [adminUserQuery, setAdminUserQuery] = useState("")
+  const [selectedAdminUser, setSelectedAdminUser] = useState<string | null>(null)
+  const [adminUserDetail, setAdminUserDetail] = useState<AdminUserDetail | null>(null)
+  const [isAdminUserDetailLoading, setIsAdminUserDetailLoading] = useState(false)
+  const [adminPointTarget, setAdminPointTarget] = useState("")
+  const [adminPointAmount, setAdminPointAmount] = useState("100")
+  const [adminPointReason, setAdminPointReason] = useState("관리자 수동 조정")
+  const [isAdminPointSaving, setIsAdminPointSaving] = useState(false)
 
   const recordPoint = useCallback(async (userName: string, desc: string, amt: number) => {
     setPointHistory(prev => {
@@ -249,19 +293,26 @@ function MainContent() {
   useEffect(() => {
     if (nickname === "admin" && isAdminAuthenticated) {
       setIsAdminLogsLoading(true);
+      setIsAdminOrdersLoading(true);
+      setIsAdminUsersLoading(true);
       
-      Promise.all([getSystemLogs(), getAllOrders()])
-        .then(([sysLogsData, ordersData]) => {
+      Promise.all([getSystemLogs(), getAllOrders(), getAdminUsers(adminPassword)])
+        .then(([sysLogsData, ordersData, usersData]) => {
           setSysLogs(sysLogsData);
           setAdminOrders(ordersData);
-          setIsAdminLogsLoading(false);
+          setAdminUsers(usersData);
         })
         .catch((e) => {
-          console.error("로그 로딩 실패:", e);
+          console.error("관리자 데이터 로딩 실패:", e);
+          toast.error("관리자 데이터를 불러오지 못했습니다.");
+        })
+        .finally(() => {
           setIsAdminLogsLoading(false);
+          setIsAdminOrdersLoading(false);
+          setIsAdminUsersLoading(false);
         });
     }
-  }, [nickname, isAdminAuthenticated]);
+  }, [nickname, isAdminAuthenticated, adminPassword]);
 
   useEffect(() => {
     if (nickname) {
@@ -294,7 +345,88 @@ function MainContent() {
       .sort((a, b) => b.points - a.points)
       .map((user, index) => ({ ...user, rank: index + 1 }));
   }, [nickname, points, remoteUsers]);
-    
+
+  const filteredAdminUsers = useMemo(() => {
+    const query = adminUserQuery.trim().toLowerCase();
+    if (!query) return adminUsers;
+    return adminUsers.filter((user) => user.username.toLowerCase().includes(query));
+  }, [adminUserQuery, adminUsers]);
+
+  const adminSummary = useMemo(() => {
+    const visibleUsers = adminUsers.filter((user) => user.username !== "admin");
+    return {
+      userCount: visibleUsers.length,
+      totalPoints: visibleUsers.reduce((sum, user) => sum + user.points, 0),
+      totalUsageCount: visibleUsers.reduce((sum, user) => sum + user.usageCount, 0),
+      pendingOrders: adminOrders.filter((order) => order.status === "requested").length,
+    };
+  }, [adminUsers, adminOrders]);
+
+  const refreshAdminUsers = useCallback(async () => {
+    setIsAdminUsersLoading(true);
+    try {
+      const usersData = await getAdminUsers(adminPassword);
+      setAdminUsers(usersData);
+      return usersData;
+    } catch (e) {
+      console.error("사용자 목록 새로고침 실패:", e);
+      toast.error("사용자 목록을 불러오지 못했습니다.");
+      return [];
+    } finally {
+      setIsAdminUsersLoading(false);
+    }
+  }, [adminPassword]);
+
+  const handleSelectAdminUser = useCallback(async (userName: string) => {
+    setSelectedAdminUser(userName);
+    setAdminPointTarget(userName);
+    setIsAdminUserDetailLoading(true);
+    try {
+      const detail = await getAdminUserDetail(userName, adminPassword);
+      setAdminUserDetail(detail);
+    } catch (e) {
+      console.error("사용자 상세 조회 실패:", e);
+      toast.error("사용자 상세 정보를 불러오지 못했습니다.");
+    } finally {
+      setIsAdminUserDetailLoading(false);
+    }
+  }, [adminPassword]);
+
+  const handleAdminPointAdjust = useCallback(async (mode: "grant" | "revoke") => {
+    const target = adminPointTarget.trim();
+    const parsedAmount = Math.abs(Number.parseInt(adminPointAmount, 10));
+
+    if (!target) {
+      toast.error("대상 사용자를 선택하거나 입력해 주세요.");
+      return;
+    }
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      toast.error("포인트는 1 이상의 숫자로 입력해 주세요.");
+      return;
+    }
+
+    const signedAmount = mode === "grant" ? parsedAmount : -parsedAmount;
+    const reason = adminPointReason.trim() || (mode === "grant" ? "관리자 포인트 지급" : "관리자 포인트 회수");
+
+    setIsAdminPointSaving(true);
+    try {
+      const updated = await adjustUserPointsByAdmin(target, signedAmount, reason, adminPassword);
+      const usersData = await getAdminUsers(adminPassword);
+      setAdminUsers(usersData);
+      setAdminPointTarget(updated.username);
+      setSelectedAdminUser(updated.username);
+      const detail = await getAdminUserDetail(updated.username, adminPassword);
+      setAdminUserDetail(detail);
+      toast.success(`${updated.username}님 포인트가 ${updated.points.toLocaleString()}P로 조정되었습니다.`);
+    } catch (e: any) {
+      console.error("관리자 포인트 조정 실패:", e);
+      toast.error(e?.message || "포인트 조정에 실패했습니다.");
+    } finally {
+      setIsAdminPointSaving(false);
+    }
+  }, [adminPointTarget, adminPointAmount, adminPointReason, adminPassword]);
+     
   const handleOnboardingComplete = useCallback(async (name: string) => {
     localStorage.setItem("eco_nickname", name);
     sessionStorage.setItem("eco_session", "active");
@@ -359,11 +491,12 @@ function MainContent() {
     [nickname, recordPoint]
   )
 
-  const handleAdminLogin = useCallback(() => {
-    if (adminPassword === process.env.NEXT_PUBLIC_ADMIN_PASSWORD || adminPassword === "seoul1234") {
+  const handleAdminLogin = useCallback(async () => {
+    try {
+      await verifyAdminPassword(adminPassword);
       setIsAdminAuthenticated(true)
       toast.success("관리자 인증 성공! 대시보드를 불러옵니다.")
-    } else {
+    } catch {
       toast.error("비밀번호가 일치하지 않습니다.")
     }
   }, [adminPassword])
@@ -746,13 +879,183 @@ function MainContent() {
               </div>
             </div>
             
-            <div className="bg-card p-6 rounded-2xl border border-border flex flex-col gap-4 shadow-sm">
-              <h2 className="text-lg font-bold text-foreground">👥 전체 사용자 기본 현황</h2>
-              <div className="flex justify-between items-center bg-background p-4 rounded-xl border border-border">
-                <span className="text-sm text-muted-foreground">현재 활성 가입자 수</span>
-                <span className="text-lg font-bold text-foreground">
-                  {leaderboard ? Math.max(0, leaderboard.length - 1) : 0} 명
-                </span>
+            <div className="bg-card p-6 rounded-2xl border border-border flex flex-col gap-5 shadow-sm">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-foreground">👥 사용자 · 포인트 관리</h2>
+                  <p className="text-sm text-muted-foreground mt-1">사용자 조회, 상세 활동 확인, 포인트 지급/회수를 한 화면에서 처리합니다.</p>
+                </div>
+                <button
+                  onClick={refreshAdminUsers}
+                  disabled={isAdminUsersLoading}
+                  className="text-sm bg-secondary text-secondary-foreground px-4 py-2 rounded-xl font-medium hover:bg-secondary/80 transition disabled:opacity-50"
+                >
+                  {isAdminUsersLoading ? "새로고침 중..." : "사용자 새로고침"}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="bg-background p-4 rounded-xl border border-border">
+                  <div className="text-xs text-muted-foreground">사용자</div>
+                  <div className="text-xl font-bold text-foreground mt-1">{adminSummary.userCount.toLocaleString()}명</div>
+                </div>
+                <div className="bg-background p-4 rounded-xl border border-border">
+                  <div className="text-xs text-muted-foreground">총 포인트</div>
+                  <div className="text-xl font-bold text-primary mt-1">{adminSummary.totalPoints.toLocaleString()}P</div>
+                </div>
+                <div className="bg-background p-4 rounded-xl border border-border">
+                  <div className="text-xs text-muted-foreground">탄소 기록</div>
+                  <div className="text-xl font-bold text-foreground mt-1">{adminSummary.totalUsageCount.toLocaleString()}건</div>
+                </div>
+                <div className="bg-background p-4 rounded-xl border border-border">
+                  <div className="text-xs text-muted-foreground">대기 주문</div>
+                  <div className="text-xl font-bold text-yellow-500 mt-1">{adminSummary.pendingOrders.toLocaleString()}건</div>
+                </div>
+              </div>
+
+              <div className="grid lg:grid-cols-[1.2fr_0.8fr] gap-4">
+                <div className="bg-background rounded-xl border border-border overflow-hidden">
+                  <div className="p-4 border-b border-border flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <input
+                      value={adminUserQuery}
+                      onChange={(e) => setAdminUserQuery(e.target.value)}
+                      placeholder="사용자명 검색"
+                      className="bg-card text-foreground border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary w-full md:max-w-xs"
+                    />
+                    <span className="text-xs text-muted-foreground">표시 {filteredAdminUsers.length.toLocaleString()}명</span>
+                  </div>
+
+                  {isAdminUsersLoading ? (
+                    <div className="p-8 text-center text-sm text-muted-foreground animate-pulse">사용자 정보를 불러오는 중입니다...</div>
+                  ) : filteredAdminUsers.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-muted-foreground">검색된 사용자가 없습니다.</div>
+                  ) : (
+                    <div className="overflow-x-auto max-h-[430px] overflow-y-auto">
+                      <table className="w-full text-sm text-left">
+                        <thead className="text-xs text-muted-foreground bg-secondary/50 sticky top-0 z-10 shadow-sm">
+                          <tr>
+                            <th className="px-4 py-3 font-medium whitespace-nowrap">사용자</th>
+                            <th className="px-4 py-3 font-medium text-right whitespace-nowrap">포인트</th>
+                            <th className="px-4 py-3 font-medium text-right whitespace-nowrap">로그인</th>
+                            <th className="px-4 py-3 font-medium text-right whitespace-nowrap">탄소 기록</th>
+                            <th className="px-4 py-3 font-medium whitespace-nowrap">최근 기록</th>
+                            <th className="px-4 py-3 font-medium text-center whitespace-nowrap">액션</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {filteredAdminUsers.slice(0, 200).map((user) => (
+                            <tr key={user.username} className={selectedAdminUser === user.username ? "bg-primary/5" : "hover:bg-secondary/20 transition-colors"}>
+                              <td className="px-4 py-3 font-medium whitespace-nowrap">{user.username}</td>
+                              <td className="px-4 py-3 text-right font-bold text-primary whitespace-nowrap">{user.points.toLocaleString()}P</td>
+                              <td className="px-4 py-3 text-right text-muted-foreground whitespace-nowrap">{user.loginCount.toLocaleString()}회</td>
+                              <td className="px-4 py-3 text-right text-muted-foreground whitespace-nowrap">{user.usageCount.toLocaleString()}건</td>
+                              <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{user.lastUsageDate || "-"}</td>
+                              <td className="px-4 py-3 text-center whitespace-nowrap">
+                                <button
+                                  onClick={() => handleSelectAdminUser(user.username)}
+                                  className="px-3 py-1 bg-secondary text-secondary-foreground text-xs rounded-lg hover:bg-secondary/80 transition"
+                                >
+                                  상세/선택
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <div className="bg-background p-4 rounded-xl border border-border flex flex-col gap-3">
+                    <h3 className="font-bold text-foreground">포인트 지급/회수</h3>
+                    <input
+                      value={adminPointTarget}
+                      onChange={(e) => setAdminPointTarget(e.target.value)}
+                      placeholder="대상 사용자명"
+                      className="bg-card text-foreground border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <input
+                      type="number"
+                      min="1"
+                      value={adminPointAmount}
+                      onChange={(e) => setAdminPointAmount(e.target.value)}
+                      placeholder="포인트 수량"
+                      className="bg-card text-foreground border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <input
+                      value={adminPointReason}
+                      onChange={(e) => setAdminPointReason(e.target.value)}
+                      placeholder="사유"
+                      className="bg-card text-foreground border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={() => handleAdminPointAdjust("grant")}
+                        disabled={isAdminPointSaving}
+                        className="bg-green-500 text-white font-bold rounded-xl p-3 hover:bg-green-600 transition disabled:opacity-50"
+                      >
+                        지급
+                      </button>
+                      <button
+                        onClick={() => handleAdminPointAdjust("revoke")}
+                        disabled={isAdminPointSaving}
+                        className="bg-red-500 text-white font-bold rounded-xl p-3 hover:bg-red-600 transition disabled:opacity-50"
+                      >
+                        회수
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-background p-4 rounded-xl border border-border min-h-[220px]">
+                    <h3 className="font-bold text-foreground mb-3">선택 사용자 상세</h3>
+                    {isAdminUserDetailLoading ? (
+                      <div className="text-sm text-muted-foreground animate-pulse">상세 정보를 불러오는 중입니다...</div>
+                    ) : !adminUserDetail?.user ? (
+                      <div className="text-sm text-muted-foreground">사용자를 선택하면 활동 요약과 최근 포인트 내역이 표시됩니다.</div>
+                    ) : (
+                      <div className="flex flex-col gap-4">
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div className="bg-card p-3 rounded-lg border border-border">
+                            <div className="text-xs text-muted-foreground">현재 포인트</div>
+                            <div className="font-bold text-primary mt-1">{adminUserDetail.user.points.toLocaleString()}P</div>
+                          </div>
+                          <div className="bg-card p-3 rounded-lg border border-border">
+                            <div className="text-xs text-muted-foreground">누적 배출량</div>
+                            <div className="font-bold text-foreground mt-1">{adminUserDetail.user.totalCo2Kg.toLocaleString()}kg</div>
+                          </div>
+                          <div className="bg-card p-3 rounded-lg border border-border">
+                            <div className="text-xs text-muted-foreground">인증</div>
+                            <div className="font-bold text-foreground mt-1">{adminUserDetail.user.certificationCount.toLocaleString()}건</div>
+                          </div>
+                          <div className="bg-card p-3 rounded-lg border border-border">
+                            <div className="text-xs text-muted-foreground">주문</div>
+                            <div className="font-bold text-foreground mt-1">{adminUserDetail.user.orderCount.toLocaleString()}건</div>
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-xs font-semibold text-muted-foreground mb-2">최근 포인트 내역</div>
+                          <div className="max-h-[150px] overflow-y-auto divide-y divide-border rounded-lg border border-border">
+                            {adminUserDetail.pointLogs.length === 0 ? (
+                              <div className="p-3 text-xs text-muted-foreground">포인트 내역이 없습니다.</div>
+                            ) : adminUserDetail.pointLogs.slice(0, 8).map((log) => (
+                              <div key={log.id} className="p-3 text-xs flex justify-between gap-3">
+                                <div>
+                                  <div className="font-medium text-foreground">{log.description}</div>
+                                  <div className="text-muted-foreground mt-1">{log.date}</div>
+                                </div>
+                                <div className={log.amount >= 0 ? "font-bold text-green-500 whitespace-nowrap" : "font-bold text-red-500 whitespace-nowrap"}>
+                                  {log.amount >= 0 ? "+" : ""}{log.amount.toLocaleString()}P
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 

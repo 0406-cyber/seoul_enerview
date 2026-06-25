@@ -636,3 +636,250 @@ export async function getChatMessages(username: string): Promise<any[]> {
     content: row.content,
   }));
 }
+
+function assertAdminPassword(adminPassword?: string): void {
+  const configuredPassword = String(
+    (process.env as any).ADMIN_PASSWORD ||
+      (process.env as any).NEXT_PUBLIC_ADMIN_PASSWORD ||
+      "seoul1234",
+  );
+
+  if (!adminPassword || adminPassword !== configuredPassword) {
+    throw new Error("관리자 인증이 필요합니다.");
+  }
+}
+
+/** 23. 관리자: 서버 측 비밀번호 검증 */
+export async function verifyAdminPassword(
+  adminPassword: string,
+): Promise<boolean> {
+  assertAdminPassword(adminPassword);
+  return true;
+}
+
+export type AdminUserSummary = {
+  username: string;
+  loginCount: number;
+  points: number;
+  usageCount: number;
+  lastUsageDate: string | null;
+  lastCo2Kg: number;
+  totalCo2Kg: number;
+  pointLogCount: number;
+  certificationCount: number;
+  orderCount: number;
+  pendingOrderCount: number;
+};
+
+export type AdminUserDetail = {
+  user: AdminUserSummary | null;
+  pointLogs: Array<{ id: string; date: string; description: string; amount: number }>;
+  usageHistory: UsageRow[];
+  certifications: Array<{ id: string; date: string; type: string; points: number }>;
+  orders: Array<{
+    id: string;
+    itemId: string;
+    itemName: string;
+    cost: number;
+    requestedAt: string;
+    status: string;
+  }>;
+};
+
+const mapAdminUserSummary = (row: any): AdminUserSummary => ({
+  username: String(row.username ?? ""),
+  loginCount: Number(row.login_count ?? row.loginCount) || 0,
+  points: Number(row.points) || 0,
+  usageCount: Number(row.usage_count ?? row.usageCount) || 0,
+  lastUsageDate: row.last_usage_date ?? row.lastUsageDate ?? null,
+  lastCo2Kg: Number(row.last_co2_kg ?? row.lastCo2Kg) || 0,
+  totalCo2Kg: Number(row.total_co2_kg ?? row.totalCo2Kg) || 0,
+  pointLogCount: Number(row.point_log_count ?? row.pointLogCount) || 0,
+  certificationCount: Number(row.certification_count ?? row.certificationCount) || 0,
+  orderCount: Number(row.order_count ?? row.orderCount) || 0,
+  pendingOrderCount: Number(row.pending_order_count ?? row.pendingOrderCount) || 0,
+});
+
+/** 24. 관리자: 전체 사용자 요약 조회 */
+export async function getAdminUsers(
+  adminPassword: string,
+): Promise<AdminUserSummary[]> {
+  assertAdminPassword(adminPassword);
+  const db = getDb();
+  if (!db) return [];
+
+  const { results } = await db
+    .prepare(
+      `SELECT
+        u.username,
+        u.login_count,
+        u.points,
+        COALESCE((SELECT COUNT(*) FROM usage WHERE username = u.username), 0) AS usage_count,
+        (SELECT date FROM usage WHERE username = u.username ORDER BY id DESC LIMIT 1) AS last_usage_date,
+        COALESCE((SELECT co2_kg FROM usage WHERE username = u.username ORDER BY id DESC LIMIT 1), 0) AS last_co2_kg,
+        COALESCE((SELECT ROUND(SUM(co2_kg), 2) FROM usage WHERE username = u.username), 0) AS total_co2_kg,
+        COALESCE((SELECT COUNT(*) FROM logs WHERE username = u.username), 0) AS point_log_count,
+        COALESCE((SELECT COUNT(*) FROM certifications WHERE username = u.username), 0) AS certification_count,
+        COALESCE((SELECT COUNT(*) FROM orders WHERE username = u.username), 0) AS order_count,
+        COALESCE((SELECT COUNT(*) FROM orders WHERE username = u.username AND status = 'requested'), 0) AS pending_order_count
+       FROM users u
+       ORDER BY u.points DESC, u.login_count DESC, u.username ASC`,
+    )
+    .all();
+
+  return results.map(mapAdminUserSummary);
+}
+
+/** 25. 관리자: 사용자별 상세 정보 조회 */
+export async function getAdminUserDetail(
+  username: string,
+  adminPassword: string,
+): Promise<AdminUserDetail> {
+  assertAdminPassword(adminPassword);
+  const db = getDb();
+  if (!db) {
+    return {
+      user: null,
+      pointLogs: [],
+      usageHistory: [],
+      certifications: [],
+      orders: [],
+    };
+  }
+
+  const user = await db
+    .prepare(
+      `SELECT
+        u.username,
+        u.login_count,
+        u.points,
+        COALESCE((SELECT COUNT(*) FROM usage WHERE username = u.username), 0) AS usage_count,
+        (SELECT date FROM usage WHERE username = u.username ORDER BY id DESC LIMIT 1) AS last_usage_date,
+        COALESCE((SELECT co2_kg FROM usage WHERE username = u.username ORDER BY id DESC LIMIT 1), 0) AS last_co2_kg,
+        COALESCE((SELECT ROUND(SUM(co2_kg), 2) FROM usage WHERE username = u.username), 0) AS total_co2_kg,
+        COALESCE((SELECT COUNT(*) FROM logs WHERE username = u.username), 0) AS point_log_count,
+        COALESCE((SELECT COUNT(*) FROM certifications WHERE username = u.username), 0) AS certification_count,
+        COALESCE((SELECT COUNT(*) FROM orders WHERE username = u.username), 0) AS order_count,
+        COALESCE((SELECT COUNT(*) FROM orders WHERE username = u.username AND status = 'requested'), 0) AS pending_order_count
+       FROM users u
+       WHERE u.username = ?`,
+    )
+    .bind(username)
+    .first<any>();
+
+  const [pointLogRows, usageRows, certificationRows, orderRows] = await Promise.all([
+    db
+      .prepare(
+        "SELECT id, date, description, amount FROM logs WHERE username = ? ORDER BY id DESC LIMIT 20",
+      )
+      .bind(username)
+      .all(),
+    db
+      .prepare(
+        "SELECT date, elec_kwh, gas_m3, co2_kg FROM usage WHERE username = ? ORDER BY id DESC LIMIT 12",
+      )
+      .bind(username)
+      .all(),
+    db
+      .prepare(
+        "SELECT id, date, type, points FROM certifications WHERE username = ? ORDER BY date DESC LIMIT 12",
+      )
+      .bind(username)
+      .all(),
+    db
+      .prepare(
+        "SELECT id, itemId, itemName, cost, requestedAt, status FROM orders WHERE username = ? ORDER BY requestedAt DESC LIMIT 20",
+      )
+      .bind(username)
+      .all(),
+  ]);
+
+  return {
+    user: user ? mapAdminUserSummary(user) : null,
+    pointLogs: pointLogRows.results.map((row: any) => ({
+      id: `admin-log-${row.id}`,
+      date: row.date,
+      description: row.description,
+      amount: Number(row.amount) || 0,
+    })),
+    usageHistory: usageRows.results.map((row: any) => ({
+      date: row.date,
+      elec_kwh: Number(row.elec_kwh) || 0,
+      gas_m3: Number(row.gas_m3) || 0,
+      co2_kg: Number(row.co2_kg) || 0,
+    })),
+    certifications: certificationRows.results.map((row: any) => ({
+      id: row.id,
+      date: row.date,
+      type: row.type,
+      points: Number(row.points) || 0,
+    })),
+    orders: orderRows.results.map((row: any) => ({
+      id: row.id,
+      itemId: row.itemId,
+      itemName: row.itemName,
+      cost: Number(row.cost) || 0,
+      requestedAt: row.requestedAt,
+      status: row.status || "requested",
+    })),
+  };
+}
+
+/** 26. 관리자: 포인트 지급/회수 */
+export async function adjustUserPointsByAdmin(
+  username: string,
+  amount: number,
+  reason: string,
+  adminPassword: string,
+): Promise<{ username: string; points: number }> {
+  assertAdminPassword(adminPassword);
+  const db = getDb();
+  if (!db) throw new Error("D1 데이터베이스가 바인딩되지 않았습니다.");
+
+  const target = username.trim();
+  const delta = Math.trunc(Number(amount));
+  const memo = reason.trim() || "관리자 수동 조정";
+
+  if (!target) throw new Error("사용자명이 비어 있습니다.");
+  if (!Number.isFinite(delta) || delta === 0) {
+    throw new Error("조정할 포인트는 0이 아닌 숫자여야 합니다.");
+  }
+
+  const existing = await db
+    .prepare("SELECT username, points FROM users WHERE username = ?")
+    .bind(target)
+    .first<{ username: string; points: number }>();
+
+  if (!existing) throw new Error("대상 사용자를 찾을 수 없습니다.");
+
+  await db
+    .prepare("UPDATE users SET points = MAX(points + ?, 0) WHERE username = ?")
+    .bind(delta, target)
+    .run();
+
+  const updated = await db
+    .prepare("SELECT username, points FROM users WHERE username = ?")
+    .bind(target)
+    .first<{ username: string; points: number }>();
+
+  const dateStr =
+    new Date().toLocaleDateString("ko-KR") +
+    " " +
+    new Date().toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  await db
+    .prepare(
+      "INSERT INTO logs (username, date, description, amount) VALUES (?, ?, ?, ?)",
+    )
+    .bind(target, dateStr, `[관리자] ${memo}`, delta)
+    .run();
+
+  return {
+    username: target,
+    points: Number(updated?.points) || 0,
+  };
+}
+
