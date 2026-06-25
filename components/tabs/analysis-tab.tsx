@@ -1,6 +1,12 @@
-"use client"
+"use client";
 
-import { useMemo, useState, useEffect, type ChangeEvent, type ReactNode } from "react"
+import {
+  useMemo,
+  useState,
+  useEffect,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 import {
   Zap,
   Flame,
@@ -16,100 +22,111 @@ import {
   Plane,
   Utensils,
   Home,
-} from "lucide-react"
-import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts"
+} from "lucide-react";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Tooltip,
+} from "recharts";
 import {
   calculateCarbonBreakdown,
   CAR_PATTERN_OPTIONS,
   PUBLIC_TRANSIT_PATTERN_OPTIONS,
   FLIGHT_PATTERN_OPTIONS,
+  FLIGHT_COUNT_OPTIONS,
   EMISSION_FACTORS,
   type CarbonBreakdown,
   type CarbonCategoryInputValues,
-} from "@/lib/carbon-categories"
+} from "@/lib/carbon-categories";
 
 interface AnalysisTabProps {
-  electricityUsage: string
-  gasUsage: string
-  onElectricityChange: (value: string) => void
-  onGasChange: (value: string) => void
-  carbonCategoryInputs: CarbonCategoryInputValues
-  onCarbonCategoryInputChange: (key: keyof CarbonCategoryInputValues, value: string | number) => void
-  onCalculate: () => Promise<void>
-  carbonEmission: number | null
-  carbonBreakdown: CarbonBreakdown | null
-  chartData: { date: string; carbon: number }[]
-  isSaving?: boolean
+  electricityUsage: string;
+  gasUsage: string;
+  onElectricityChange: (value: string) => void;
+  onGasChange: (value: string) => void;
+  carbonCategoryInputs: CarbonCategoryInputValues;
+  onCarbonCategoryInputChange: (
+    key: keyof CarbonCategoryInputValues,
+    value: string | number,
+  ) => void;
+  onCalculate: () => Promise<void>;
+  carbonEmission: number | null;
+  carbonBreakdown: CarbonBreakdown | null;
+  chartData: { date: string; carbon: number }[];
+  isSaving?: boolean;
 }
 
 // 전기요금에서 kWh를 역산하기 위한 계산 함수
 const calculateBill = (kwh: number): number => {
-  let basic = 0
-  let energy = 0
-  
+  let basic = 0;
+  let energy = 0;
+
   if (kwh <= 200) {
-    basic = 730
-    energy = kwh * 105.0
+    basic = 730;
+    energy = kwh * 105.0;
   } else if (kwh <= 400) {
-    basic = 1260
-    energy = (200 * 105.0) + ((kwh - 200) * 174.0)
+    basic = 1260;
+    energy = 200 * 105.0 + (kwh - 200) * 174.0;
   } else {
-    basic = 6060
-    energy = (200 * 105.0) + (200 * 174.0) + ((kwh - 400) * 242.3)
+    basic = 6060;
+    energy = 200 * 105.0 + 200 * 174.0 + (kwh - 400) * 242.3;
   }
-  
-  const climate = kwh * 9.0
-  const fuel = kwh * 5.0
-  
-  const pureTotal = basic + energy + climate + fuel
-  
+
+  const climate = kwh * 9.0;
+  const fuel = kwh * 5.0;
+
+  const pureTotal = basic + energy + climate + fuel;
+
   // 부가가치세 10% (원 단위 반올림)
-  const vat = Math.round(pureTotal * 0.1)
-  
+  const vat = Math.round(pureTotal * 0.1);
+
   // 전력산업기반기금 2.7% (10원 미만 절사, 2025.7.1 개정 인하 요율 반영)
-  const fund = Math.floor((pureTotal * 0.027) / 10) * 10 
-  
-  const total = pureTotal + vat + fund
-  
+  const fund = Math.floor((pureTotal * 0.027) / 10) * 10;
+
+  const total = pureTotal + vat + fund;
+
   // 최종 청구금액 (10원 단위 미만 절사)
-  return Math.floor(total / 10) * 10
-}
+  return Math.floor(total / 10) * 10;
+};
 
 const inverseCalculateKwh = (targetBill: number): number => {
-  if (targetBill <= 0) return 0
-  
-  let low = 0
-  let high = 50000 // 일반 가정 최대치를 넘어가는 여유 탐색 범위
-  let mid = 0
-  
+  if (targetBill <= 0) return 0;
+
+  let low = 0;
+  let high = 50000; // 일반 가정 최대치를 넘어가는 여유 탐색 범위
+  let mid = 0;
+
   // 10원 단위 절사로 인한 계단식 값을 이분 탐색(Binary Search)으로 추적
   for (let i = 0; i < 100; i++) {
-    mid = (low + high) / 2
-    const currentBill = calculateBill(mid)
-    
+    mid = (low + high) / 2;
+    const currentBill = calculateBill(mid);
+
     if (currentBill === targetBill) {
-      break
+      break;
     } else if (currentBill < targetBill) {
-      low = mid
+      low = mid;
     } else {
-      high = mid
+      high = mid;
     }
   }
-  
-  return Number(mid.toFixed(1))
-}
+
+  return Number(mid.toFixed(1));
+};
 
 const formatKg = (value: number | null | undefined, digits = 1) => {
-  if (value === null || value === undefined || Number.isNaN(value)) return "—"
-  return `${value.toFixed(digits)}kg`
-}
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return `${value.toFixed(digits)}kg`;
+};
 
 const sanitizeMealInput = (value: string): number => {
-  if (value === "") return 0
-  const parsed = Number(value)
-  if (!Number.isFinite(parsed) || parsed < 0) return 0
-  return Math.min(parsed, 21)
-}
+  if (value === "") return 0;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return 0;
+  return Math.min(parsed, 21);
+};
 
 function CategoryCard({
   icon,
@@ -117,10 +134,10 @@ function CategoryCard({
   subtitle,
   children,
 }: {
-  icon: ReactNode
-  title: string
-  subtitle: string
-  children: ReactNode
+  icon: ReactNode;
+  title: string;
+  subtitle: string;
+  children: ReactNode;
 }) {
   return (
     <div className="glass-morphism rounded-[2rem] p-5 md:p-6 space-y-5 border border-border/70">
@@ -130,26 +147,30 @@ function CategoryCard({
         </div>
         <div className="min-w-0">
           <h3 className="text-lg font-black text-foreground">{title}</h3>
-          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{subtitle}</p>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+            {subtitle}
+          </p>
         </div>
       </div>
       {children}
     </div>
-  )
+  );
 }
 
-function SelectBlock({
+function SelectBlock<T extends string | number>({
   label,
   value,
   options,
   onChange,
 }: {
-  label: string
-  value: string
-  options: readonly { value: string; label: string; description: string }[]
-  onChange: (value: string) => void
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string; description: string }[];
+  onChange: (value: T) => void;
 }) {
-  const selected = options.find((option) => option.value === value)
+  const selected = options.find(
+    (option) => String(option.value) === String(value),
+  );
 
   return (
     <div className="space-y-2">
@@ -157,12 +178,22 @@ function SelectBlock({
         {label}
       </label>
       <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={String(value)}
+        onChange={(e) => {
+          const nextOption = options.find(
+            (option) => String(option.value) === e.target.value,
+          );
+          if (nextOption) onChange(nextOption.value);
+        }}
         className="w-full bg-black/5 dark:bg-white/5 rounded-2xl px-4 py-4 text-sm font-bold text-foreground border border-black/10 dark:border-white/5 focus:border-primary/50 focus:bg-black/10 dark:focus:bg-white/10 outline-none transition-all"
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option
+            key={String(option.value)}
+            value={String(option.value)}
+            className="bg-white text-zinc-950"
+            style={{ backgroundColor: "#ffffff", color: "#111827" }}
+          >
             {option.label}
           </option>
         ))}
@@ -173,7 +204,7 @@ function SelectBlock({
         </p>
       )}
     </div>
-  )
+  );
 }
 
 function MealInput({
@@ -182,16 +213,18 @@ function MealInput({
   factor,
   onChange,
 }: {
-  label: string
-  value: number
-  factor: number
-  onChange: (value: number) => void
+  label: string;
+  value: number;
+  factor: number;
+  onChange: (value: number) => void;
 }) {
   return (
     <label className="block space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-bold text-muted-foreground">{label}</span>
-        <span className="text-[10px] text-muted-foreground/70">{factor}kg/회</span>
+        <span className="text-[10px] text-muted-foreground/70">
+          {factor}kg/회
+        </span>
       </div>
       <div className="relative">
         <input
@@ -204,10 +237,12 @@ function MealInput({
           placeholder="0"
           className="w-full bg-black/5 dark:bg-white/5 rounded-2xl px-4 py-3 pr-12 text-base font-black text-foreground placeholder:text-muted-foreground/50 border border-black/10 dark:border-white/5 focus:border-primary/50 focus:bg-black/10 dark:focus:bg-white/10 outline-none transition-all"
         />
-        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-bold">회</span>
+        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-bold">
+          회
+        </span>
       </div>
     </label>
-  )
+  );
 }
 
 export function AnalysisTab({
@@ -223,73 +258,79 @@ export function AnalysisTab({
   chartData,
   isSaving,
 }: AnalysisTabProps) {
-  const [isCalculating, setIsCalculating] = useState(false)
+  const [isCalculating, setIsCalculating] = useState(false);
 
   // 입력된 전기요금을 시각적으로 관리하기 위한 로컬 상태
   const [electricityBill, setElectricityBill] = useState(() => {
-    return electricityUsage ? String(calculateBill(Number(electricityUsage))) : ""
-  })
+    return electricityUsage
+      ? String(calculateBill(Number(electricityUsage)))
+      : "";
+  });
 
   // 외부(부모 컴포넌트)에서 초기화되거나 값이 변경될 때 로컬 요금 상태를 동기화
   useEffect(() => {
     if (!electricityUsage) {
-      setElectricityBill("")
+      setElectricityBill("");
     } else {
-      const currentKwh = inverseCalculateKwh(Number(electricityBill))
+      const currentKwh = inverseCalculateKwh(Number(electricityBill));
       // 부모의 kWh가 현재 화면의 요금에서 역산된 kWh와 다르다면 외부에서 덮어씌운 것으로 간주하여 동기화
       if (Number(electricityUsage) !== currentKwh) {
-        setElectricityBill(String(calculateBill(Number(electricityUsage))))
+        setElectricityBill(String(calculateBill(Number(electricityUsage))));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [electricityUsage])
+  }, [electricityUsage]);
 
   const stats = useMemo(() => {
-    const last = chartData.at(-1)?.carbon ?? null
-    const prev = chartData.at(-2)?.carbon ?? null
-    const delta = last !== null && prev !== null ? last - prev : null
+    const last = chartData.at(-1)?.carbon ?? null;
+    const prev = chartData.at(-2)?.carbon ?? null;
+    const delta = last !== null && prev !== null ? last - prev : null;
     const deltaPct =
-      last !== null && prev !== null && prev !== 0 ? (delta / prev) * 100 : null
+      last !== null && prev !== null && prev !== 0
+        ? (delta / prev) * 100
+        : null;
 
-    const last30 = chartData.slice(Math.max(0, chartData.length - 30))
+    const last30 = chartData.slice(Math.max(0, chartData.length - 30));
     const avg30 =
       last30.length > 0
         ? last30.reduce((acc, d) => acc + d.carbon, 0) / last30.length
-        : null
+        : null;
 
-    return { last, prev, delta, deltaPct, avg30, count: chartData.length }
-  }, [chartData])
+    return { last, prev, delta, deltaPct, avg30, count: chartData.length };
+  }, [chartData]);
 
   const lifestylePreview = useMemo(
     () => calculateCarbonBreakdown(0, carbonCategoryInputs),
-    [carbonCategoryInputs]
-  )
+    [carbonCategoryInputs],
+  );
 
-  const visibleBreakdown = carbonBreakdown ?? lifestylePreview
-  const hasResidentialInput = Boolean(electricityUsage || gasUsage)
-  const hasLifestyleInput = lifestylePreview.transportMonthlyKg > 0 || lifestylePreview.dietMonthlyKg > 0
+  const visibleBreakdown = carbonBreakdown ?? lifestylePreview;
+  const hasResidentialInput = Boolean(electricityUsage || gasUsage);
+  const hasLifestyleInput =
+    lifestylePreview.transportMonthlyKg > 0 ||
+    lifestylePreview.dietMonthlyKg > 0;
 
   const handleCalculate = async () => {
-    setIsCalculating(true)
+    setIsCalculating(true);
     try {
-      await onCalculate()
+      await onCalculate();
     } finally {
-      setIsCalculating(false)
+      setIsCalculating(false);
     }
-  }
+  };
 
   // 요금 입력 시 kWh로 역산하여 전달
   const handleElectricityChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const bill = e.target.value
-    setElectricityBill(bill)
-    
+    const bill = e.target.value;
+    setElectricityBill(bill);
+
     if (!bill || isNaN(Number(bill))) {
-      onElectricityChange("")
+      onElectricityChange("");
     } else {
-      const kwh = inverseCalculateKwh(Number(bill))
-      onElectricityChange(kwh.toString())
+      const kwh = inverseCalculateKwh(Number(bill));
+      onElectricityChange(kwh.toString());
     }
-  }
+  };
 
   return (
     <div className="space-y-6 pb-28">
@@ -359,20 +400,24 @@ export function AnalysisTab({
           <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
             <Leaf className="w-32 h-32 text-primary rotate-12" />
           </div>
-          
+
           <div className="relative z-10">
             <div className="flex items-center gap-2 mb-6">
               <div className="w-10 h-10 rounded-2xl bg-primary/20 flex items-center justify-center shadow-inner">
                 <Leaf className="w-5 h-5 text-primary" />
               </div>
-              <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Carbon Footprint</span>
+              <span className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+                Carbon Footprint
+              </span>
             </div>
-            
+
             <div className="flex items-baseline gap-3">
               <span className="text-7xl font-bold text-foreground tracking-tighter text-glow">
                 {carbonEmission !== null ? carbonEmission.toFixed(1) : "0"}
               </span>
-              <span className="text-2xl font-medium text-muted-foreground">kg CO₂e</span>
+              <span className="text-2xl font-medium text-muted-foreground">
+                kg CO₂e
+              </span>
             </div>
 
             <p className="mt-4 text-sm text-muted-foreground leading-relaxed">
@@ -389,7 +434,9 @@ export function AnalysisTab({
                       : `${stats.deltaPct > 0 ? "+" : ""}${stats.deltaPct.toFixed(1)}%`}
                   </span>
                 </div>
-                <span className="text-xs text-muted-foreground">직전 기록 대비</span>
+                <span className="text-xs text-muted-foreground">
+                  직전 기록 대비
+                </span>
               </div>
             )}
           </div>
@@ -399,20 +446,43 @@ export function AnalysisTab({
         <div className="glass-card rounded-[2.5rem] p-8 space-y-5">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-xl font-bold text-foreground">카테고리별 배출</h3>
-              <p className="text-xs text-muted-foreground mt-1">기록 전에는 교통·식단 예상치만 표시됩니다.</p>
+              <h3 className="text-xl font-bold text-foreground">
+                카테고리별 배출
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                기록 전에는 교통·식단 예상치만 표시됩니다.
+              </p>
             </div>
             <BarChart3 className="w-5 h-5 text-muted-foreground" />
           </div>
 
           <div className="space-y-3">
             {[
-              { label: "교통", value: visibleBreakdown.transportMonthlyKg, icon: <Bus className="w-4 h-4" /> },
-              { label: "식단", value: visibleBreakdown.dietMonthlyKg, icon: <Utensils className="w-4 h-4" /> },
-              { label: "주거", value: carbonBreakdown?.residentialMonthlyKg ?? 0, icon: <Home className="w-4 h-4" /> },
+              {
+                label: "교통",
+                value: visibleBreakdown.transportMonthlyKg,
+                icon: <Bus className="w-4 h-4" />,
+              },
+              {
+                label: "식단",
+                value: visibleBreakdown.dietMonthlyKg,
+                icon: <Utensils className="w-4 h-4" />,
+              },
+              {
+                label: "주거",
+                value: carbonBreakdown?.residentialMonthlyKg ?? 0,
+                icon: <Home className="w-4 h-4" />,
+              },
             ].map((item) => {
-              const total = Math.max(visibleBreakdown.totalMonthlyKg, carbonEmission ?? 0, 1)
-              const width = Math.min(100, Math.max(4, (item.value / total) * 100))
+              const total = Math.max(
+                visibleBreakdown.totalMonthlyKg,
+                carbonEmission ?? 0,
+                1,
+              );
+              const width = Math.min(
+                100,
+                Math.max(4, (item.value / total) * 100),
+              );
               return (
                 <div key={item.label} className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
@@ -420,7 +490,9 @@ export function AnalysisTab({
                       <span className="text-primary">{item.icon}</span>
                       {item.label}
                     </div>
-                    <span className="font-black text-foreground">{formatKg(item.value)}</span>
+                    <span className="font-black text-foreground">
+                      {formatKg(item.value)}
+                    </span>
                   </div>
                   <div className="h-2.5 rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
                     <div
@@ -429,14 +501,19 @@ export function AnalysisTab({
                     />
                   </div>
                 </div>
-              )
+              );
             })}
           </div>
 
           <div className="rounded-2xl bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 p-4">
             <p className="text-xs font-bold text-muted-foreground">연간 환산</p>
             <p className="text-2xl font-black text-foreground mt-1">
-              {formatKg((carbonBreakdown?.totalMonthlyKg ?? visibleBreakdown.totalMonthlyKg) * 12, 0)} CO₂e/년
+              {formatKg(
+                (carbonBreakdown?.totalMonthlyKg ??
+                  visibleBreakdown.totalMonthlyKg) * 12,
+                0,
+              )}{" "}
+              CO₂e/년
             </p>
           </div>
         </div>
@@ -446,8 +523,12 @@ export function AnalysisTab({
       <div className="space-y-4">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-black text-primary uppercase tracking-[0.24em]">Lifestyle Inputs</p>
-            <h2 className="text-2xl font-black text-foreground mt-1">교통 · 식단 · 주거 기록</h2>
+            <p className="text-xs font-black text-primary uppercase tracking-[0.24em]">
+              Lifestyle Inputs
+            </p>
+            <h2 className="text-2xl font-black text-foreground mt-1">
+              교통 · 식단 · 주거 기록
+            </h2>
           </div>
           <span className="hidden md:inline-flex text-xs text-muted-foreground bg-black/5 dark:bg-white/5 px-3 py-2 rounded-full border border-black/10 dark:border-white/10">
             선택식 + 대표값 매핑 방식
@@ -465,22 +546,46 @@ export function AnalysisTab({
                 label="주행 km 패턴"
                 value={carbonCategoryInputs.carPattern}
                 options={CAR_PATTERN_OPTIONS}
-                onChange={(value) => onCarbonCategoryInputChange("carPattern", value)}
+                onChange={(value) =>
+                  onCarbonCategoryInputChange("carPattern", value)
+                }
               />
               <SelectBlock
                 label="주간 이동수단"
                 value={carbonCategoryInputs.publicTransitPattern}
                 options={PUBLIC_TRANSIT_PATTERN_OPTIONS}
-                onChange={(value) => onCarbonCategoryInputChange("publicTransitPattern", value)}
+                onChange={(value) =>
+                  onCarbonCategoryInputChange("publicTransitPattern", value)
+                }
               />
               <SelectBlock
                 label="연간 비행거리"
                 value={carbonCategoryInputs.flightPattern}
                 options={FLIGHT_PATTERN_OPTIONS}
-                onChange={(value) => onCarbonCategoryInputChange("flightPattern", value)}
+                onChange={(value) => {
+                  onCarbonCategoryInputChange("flightPattern", value);
+                  if (value === "none") {
+                    onCarbonCategoryInputChange("flightTripsPerYear", 0);
+                  } else if (carbonCategoryInputs.flightTripsPerYear === 0) {
+                    onCarbonCategoryInputChange("flightTripsPerYear", 1);
+                  }
+                }}
+              />
+              <SelectBlock
+                label="연간 비행 횟수"
+                value={carbonCategoryInputs.flightTripsPerYear}
+                options={FLIGHT_COUNT_OPTIONS}
+                onChange={(value) =>
+                  onCarbonCategoryInputChange(
+                    "flightTripsPerYear",
+                    Number(value),
+                  )
+                }
               />
               <div className="rounded-2xl bg-primary/10 border border-primary/15 p-4">
-                <p className="text-xs font-bold text-primary">현재 교통 추정치</p>
+                <p className="text-xs font-bold text-primary">
+                  현재 교통 추정치
+                </p>
                 <p className="text-2xl font-black text-foreground mt-1">
                   {formatKg(lifestylePreview.transportMonthlyKg)} / 월
                 </p>
@@ -498,36 +603,48 @@ export function AnalysisTab({
                 label="소고기"
                 value={carbonCategoryInputs.beefMealsPerWeek}
                 factor={EMISSION_FACTORS.mealKg.beef}
-                onChange={(value) => onCarbonCategoryInputChange("beefMealsPerWeek", value)}
+                onChange={(value) =>
+                  onCarbonCategoryInputChange("beefMealsPerWeek", value)
+                }
               />
               <MealInput
                 label="돼지고기"
                 value={carbonCategoryInputs.porkMealsPerWeek}
                 factor={EMISSION_FACTORS.mealKg.pork}
-                onChange={(value) => onCarbonCategoryInputChange("porkMealsPerWeek", value)}
+                onChange={(value) =>
+                  onCarbonCategoryInputChange("porkMealsPerWeek", value)
+                }
               />
               <MealInput
                 label="닭고기"
                 value={carbonCategoryInputs.chickenMealsPerWeek}
                 factor={EMISSION_FACTORS.mealKg.chicken}
-                onChange={(value) => onCarbonCategoryInputChange("chickenMealsPerWeek", value)}
+                onChange={(value) =>
+                  onCarbonCategoryInputChange("chickenMealsPerWeek", value)
+                }
               />
               <MealInput
                 label="생선·해산물"
                 value={carbonCategoryInputs.seafoodMealsPerWeek}
                 factor={EMISSION_FACTORS.mealKg.seafood}
-                onChange={(value) => onCarbonCategoryInputChange("seafoodMealsPerWeek", value)}
+                onChange={(value) =>
+                  onCarbonCategoryInputChange("seafoodMealsPerWeek", value)
+                }
               />
               <div className="col-span-2">
                 <MealInput
                   label="채식·두부"
                   value={carbonCategoryInputs.plantMealsPerWeek}
                   factor={EMISSION_FACTORS.mealKg.plant}
-                  onChange={(value) => onCarbonCategoryInputChange("plantMealsPerWeek", value)}
+                  onChange={(value) =>
+                    onCarbonCategoryInputChange("plantMealsPerWeek", value)
+                  }
                 />
               </div>
               <div className="col-span-2 rounded-2xl bg-primary/10 border border-primary/15 p-4">
-                <p className="text-xs font-bold text-primary">현재 식단 추정치</p>
+                <p className="text-xs font-bold text-primary">
+                  현재 식단 추정치
+                </p>
                 <p className="text-2xl font-black text-foreground mt-1">
                   {formatKg(lifestylePreview.dietMonthlyKg)} / 월
                 </p>
@@ -543,7 +660,8 @@ export function AnalysisTab({
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground ml-2 uppercase tracking-widest">
-                  <Zap className="w-4 h-4 text-yellow-500" /> Electricity (고압 요금 역산)
+                  <Zap className="w-4 h-4 text-yellow-500" /> Electricity (고압
+                  요금 역산)
                 </label>
                 <div className="relative group">
                   <input
@@ -553,11 +671,15 @@ export function AnalysisTab({
                     placeholder="전기요금 입력"
                     className="w-full bg-black/5 dark:bg-white/5 rounded-2xl px-6 py-5 text-xl font-bold text-foreground placeholder:text-muted-foreground/50 border border-black/10 dark:border-white/5 focus:border-primary/50 focus:bg-black/10 dark:focus:bg-white/10 outline-none transition-all"
                   />
-                  <span className="absolute right-6 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">원</span>
+                  <span className="absolute right-6 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">
+                    원
+                  </span>
                 </div>
                 {electricityUsage && (
                   <p className="text-xs text-right text-muted-foreground mr-2 font-medium">
-                    누진세 환산 시 약 <span className="text-primary">{electricityUsage}</span> kWh 사용됨
+                    누진세 환산 시 약{" "}
+                    <span className="text-primary">{electricityUsage}</span> kWh
+                    사용됨
                   </p>
                 )}
               </div>
@@ -574,13 +696,19 @@ export function AnalysisTab({
                     placeholder="0"
                     className="w-full bg-black/5 dark:bg-white/5 rounded-2xl px-6 py-5 text-xl font-bold text-foreground placeholder:text-muted-foreground/50 border border-black/10 dark:border-white/5 focus:border-primary/50 focus:bg-black/10 dark:focus:bg-white/10 outline-none transition-all"
                   />
-                  <span className="absolute right-6 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">m³</span>
+                  <span className="absolute right-6 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">
+                    m³
+                  </span>
                 </div>
               </div>
 
               <button
                 onClick={() => void handleCalculate()}
-                disabled={isCalculating || isSaving || (!hasResidentialInput && !hasLifestyleInput)}
+                disabled={
+                  isCalculating ||
+                  isSaving ||
+                  (!hasResidentialInput && !hasLifestyleInput)
+                }
                 className="w-full bg-primary text-primary-foreground rounded-2xl py-5 text-lg font-black transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-30 disabled:hover:scale-100 shadow-[0_20px_50px_rgba(74,222,128,0.3)]"
               >
                 {isCalculating || isSaving ? (
@@ -588,7 +716,9 @@ export function AnalysisTab({
                     <div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
                     <span>SAVING...</span>
                   </div>
-                ) : "전체 탄소 배출량 기록하기"}
+                ) : (
+                  "전체 탄소 배출량 기록하기"
+                )}
               </button>
             </div>
           </CategoryCard>
@@ -599,7 +729,9 @@ export function AnalysisTab({
       <div className="glass-card rounded-[2.5rem] p-8">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <h3 className="text-xl font-bold text-foreground">배출량 히스토리</h3>
+            <h3 className="text-xl font-bold text-foreground">
+              배출량 히스토리
+            </h3>
             {stats.count > 0 && (
               <span className="text-xs font-bold text-muted-foreground bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 px-2 py-1 rounded-full">
                 최근 {stats.count}회
@@ -628,31 +760,35 @@ export function AnalysisTab({
                     <stop offset="95%" stopColor="#4ADE80" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <XAxis 
-                  dataKey="date" 
-                  axisLine={false} 
+                <XAxis
+                  dataKey="date"
+                  axisLine={false}
                   tickLine={false}
-                  tick={{ fill: '#6B7280', fontSize: 11, fontWeight: 600 }}
+                  tick={{ fill: "#6B7280", fontSize: 11, fontWeight: 600 }}
                   dy={15}
                 />
-                <YAxis 
-                  axisLine={false} 
+                <YAxis
+                  axisLine={false}
                   tickLine={false}
-                  tick={{ fill: '#6B7280', fontSize: 11, fontWeight: 600 }}
+                  tick={{ fill: "#6B7280", fontSize: 11, fontWeight: 600 }}
                   tickFormatter={(value) => `${value}kg`}
                 />
                 <Tooltip
-                  cursor={{ stroke: 'rgba(74,222,128,0.2)', strokeWidth: 2 }}
+                  cursor={{ stroke: "rgba(74,222,128,0.2)", strokeWidth: 2 }}
                   contentStyle={{
-                    backgroundColor: 'var(--card)',
-                    borderColor: 'var(--border)',
-                    borderRadius: '16px',
-                    color: 'var(--foreground)',
-                    boxShadow: '0 10px 30px var(--glass-shadow)',
-                    padding: '12px 16px'
+                    backgroundColor: "var(--card)",
+                    borderColor: "var(--border)",
+                    borderRadius: "16px",
+                    color: "var(--foreground)",
+                    boxShadow: "0 10px 30px var(--glass-shadow)",
+                    padding: "12px 16px",
                   }}
-                  itemStyle={{ color: '#4ADE80', fontWeight: 'bold' }}
-                  labelStyle={{ color: 'var(--muted-foreground)', marginBottom: '4px', fontSize: '12px' }}
+                  itemStyle={{ color: "#4ADE80", fontWeight: "bold" }}
+                  labelStyle={{
+                    color: "var(--muted-foreground)",
+                    marginBottom: "4px",
+                    fontSize: "12px",
+                  }}
                 />
                 <Area
                   type="monotone"
@@ -661,7 +797,7 @@ export function AnalysisTab({
                   strokeWidth={4}
                   fill="url(#colorCarbon)"
                   animationDuration={1500}
-                  activeDot={{ r: 6, strokeWidth: 0, fill: '#4ADE80' }}
+                  activeDot={{ r: 6, strokeWidth: 0, fill: "#4ADE80" }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -676,21 +812,40 @@ export function AnalysisTab({
           계산 기준 안내
         </p>
         <ul className="list-disc list-inside space-y-1 ml-1">
-          <li>교통·식단 대표값은 임시값입니다. 통계청 등 확정 대표값을 받으면 <code>carbon-categories.ts</code>의 매핑값만 교체하면 됩니다.</li>
-          <li>주행 패턴은 주간 km를 연간화한 뒤 월 기준으로 나눠 반영합니다.</li>
-          <li>비행기는 최근 1년 왕복 이동거리를 월 기준으로 나눠 반영합니다.</li>
-          <li>식단은 1주일 섭취 횟수를 연간화한 뒤 월 기준으로 나눠 반영합니다.</li>
-          <li>전기요금 역산 기준: 한국전력 주택용 고압, 기타계절 기준의 참고용 근사치입니다.</li>
-          <li>누진제: 1단계(~200kWh) 105.0원 / 2단계(201~400kWh) 174.0원 / 3단계(400초과) 242.3원</li>
+          <li>
+            교통·식단 대표값은 임시값입니다. 통계청 등 확정 대표값을 받으면{" "}
+            <code>carbon-categories.ts</code>의 매핑값만 교체하면 됩니다.
+          </li>
+          <li>
+            주행 패턴은 주간 km를 연간화한 뒤 월 기준으로 나눠 반영합니다.
+          </li>
+          <li>
+            비행기는 최근 1년 왕복 거리 패턴과 연간 횟수를 곱한 뒤 월 기준으로
+            나눠 반영합니다.
+          </li>
+          <li>
+            식단은 1주일 섭취 횟수를 연간화한 뒤 월 기준으로 나눠 반영합니다.
+          </li>
+          <li>
+            전기요금 역산 기준: 한국전력 주택용 고압, 기타계절 기준의 참고용
+            근사치입니다.
+          </li>
+          <li>
+            누진제: 1단계(~200kWh) 105.0원 / 2단계(201~400kWh) 174.0원 /
+            3단계(400초과) 242.3원
+          </li>
           <li>기본요금: 1단계 730원 / 2단계 1,260원 / 3단계 6,060원</li>
           <li>별도요금: 기후환경요금(9원/kWh) 및 연료비조정요금(5원/kWh)</li>
           <li>제세공과금: 부가가치세 10% 및 전력산업기반기금 2.7% 반영</li>
-          <li>복지제도 적용, 기타 할인 적용 등에 따라 오차가 발생할 수 있습니다.</li>
+          <li>
+            복지제도 적용, 기타 할인 적용 등에 따라 오차가 발생할 수 있습니다.
+          </li>
         </ul>
         <p className="pt-1 opacity-70">
-          ※ 10원 단위 절사 규정으로 인해 입력된 요금에서 역산된 전력량(kWh)은 산출된 근사치입니다.
+          ※ 10원 단위 절사 규정으로 인해 입력된 요금에서 역산된 전력량(kWh)은
+          산출된 근사치입니다.
         </p>
       </div>
     </div>
-  )
+  );
 }
