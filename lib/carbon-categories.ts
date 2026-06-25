@@ -170,14 +170,14 @@ export const DEFAULT_CARBON_CATEGORY_INPUTS: CarbonCategoryInputValues = {
 // TODO: 대표값 확정 시 아래 계수만 교체하면 UI/저장 흐름은 그대로 유지됩니다.
 // 단위: kgCO2e
 export const EMISSION_FACTORS = {
-  passengerCarKgPerKm: 0.192,
-  flightKgPerPassengerKm: 0.158,
+  passengerCarKgPerKm: 0,
+  flightKgPerPassengerKm: 0,
   mealKg: {
-    beef: 7.2,
-    pork: 2.4,
-    chicken: 1.6,
-    seafood: 1.8,
-    plant: 0.4,
+    beef: 0,
+    pork: 0,
+    chicken: 0,
+    seafood: 0,
+    plant: 0,
   },
 } as const;
 
