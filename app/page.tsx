@@ -39,6 +39,9 @@ import { loadPoints, savePoints } from "@/lib/points-storage"
 import {
   DEFAULT_CARBON_CATEGORY_INPUTS,
   calculateCarbonBreakdown,
+  createUsageCarbonDetails,
+  restoreCarbonBreakdownFromUsage,
+  restoreCarbonCategoryInputsFromUsage,
   type CarbonBreakdown,
   type CarbonCategoryInputValues,
 } from "@/lib/carbon-categories"
@@ -121,7 +124,6 @@ function MainContent() {
   const [carbonEmission, setCarbonEmission] = useState<number | null>(null)
   const [carbonBreakdown, setCarbonBreakdown] = useState<CarbonBreakdown | null>(null)
   const [carbonCategoryInputs, setCarbonCategoryInputs] = useState<CarbonCategoryInputValues>(DEFAULT_CARBON_CATEGORY_INPUTS)
-  const [isCarbonInputHydrated, setIsCarbonInputHydrated] = useState(false)
   const [usageHistory, setUsageHistory] = useState<UsageRecord[]>([])
   const [isSavingUsage, setIsSavingUsage] = useState(false)
 
@@ -154,7 +156,7 @@ function MainContent() {
     try {
       await savePointLog(userName, desc, amt);
     } catch (e) {
-      console.error("포인트 로그 구글 시트 저장 실패:", e);
+      console.error("포인트 로그 D1 저장 실패:", e);
     }
   }, []);
 
@@ -170,8 +172,27 @@ function MainContent() {
           setCarbonEmission(last.co2_kg);
           setElectricityUsage(String(last.elec_kwh));
           setGasUsage(String(last.gas_m3));
+
+          const restoredInputs = restoreCarbonCategoryInputsFromUsage(last);
+          if (restoredInputs) {
+            setCarbonCategoryInputs(restoredInputs);
+          }
+
+          const restoredBreakdown = restoreCarbonBreakdownFromUsage(last);
+          if (restoredBreakdown) {
+            setCarbonBreakdown(restoredBreakdown);
+          }
         } else {
-          setUsageHistory(loadUsageHistory(nickname));
+          const localHistory = loadUsageHistory(nickname);
+          setUsageHistory(localHistory);
+
+          const last = localHistory.at(-1);
+          if (last) {
+            const restoredInputs = restoreCarbonCategoryInputsFromUsage(last);
+            const restoredBreakdown = restoreCarbonBreakdownFromUsage(last);
+            if (restoredInputs) setCarbonCategoryInputs(restoredInputs);
+            if (restoredBreakdown) setCarbonBreakdown(restoredBreakdown);
+          }
         }
 
         const remoteData = await getLeaderboardViaApi();
@@ -214,41 +235,6 @@ function MainContent() {
     syncWithServer();
   }, [nickname, mounted]);
 
-  useEffect(() => {
-    if (!nickname || !mounted) return;
-
-    setIsCarbonInputHydrated(false);
-
-    try {
-      const raw = localStorage.getItem(`eco_carbon_category_inputs_${nickname}`);
-      setCarbonCategoryInputs(
-        raw
-          ? {
-              ...DEFAULT_CARBON_CATEGORY_INPUTS,
-              ...JSON.parse(raw),
-            }
-          : DEFAULT_CARBON_CATEGORY_INPUTS
-      );
-    } catch (e) {
-      console.error("탄소 카테고리 입력값 로딩 실패:", e);
-      setCarbonCategoryInputs(DEFAULT_CARBON_CATEGORY_INPUTS);
-    } finally {
-      setIsCarbonInputHydrated(true);
-    }
-  }, [nickname, mounted]);
-
-  useEffect(() => {
-    if (!nickname || !mounted || !isCarbonInputHydrated) return;
-
-    try {
-      localStorage.setItem(
-        `eco_carbon_category_inputs_${nickname}`,
-        JSON.stringify(carbonCategoryInputs)
-      );
-    } catch (e) {
-      console.error("탄소 카테고리 입력값 저장 실패:", e);
-    }
-  }, [carbonCategoryInputs, isCarbonInputHydrated, nickname, mounted]);
 
   useEffect(() => {
     if (isOnboarded && nickname && nickname !== "admin") {
@@ -400,7 +386,6 @@ function MainContent() {
     setAdminPassword("");
     setCarbonBreakdown(null);
     setCarbonCategoryInputs(DEFAULT_CARBON_CATEGORY_INPUTS);
-    setIsCarbonInputHydrated(false);
     toast.success("로그아웃 되었습니다.");
   }, []);
 
@@ -431,19 +416,22 @@ function MainContent() {
       const breakdown = calculateCarbonBreakdown(residentialEmission, carbonCategoryInputs)
       const emission = breakdown.totalMonthlyKg
 
-      setCarbonBreakdown(breakdown)
-      setCarbonEmission(emission)
-      
+      const details = createUsageCarbonDetails(carbonCategoryInputs, breakdown)
       const row: UsageRecord = {
         date: new Date().toISOString().slice(0, 10),
         elec_kwh: electricity,
         gas_m3: gas,
         co2_kg: emission,
+        ...details,
       }
+
+      await saveUsage(nickname, electricity, gas, emission, details)
+
+      setCarbonBreakdown(breakdown)
+      setCarbonEmission(emission)
       const next = appendUsageLocal(nickname, row)
       setUsageHistory(next)
 
-      await saveUsage(nickname, electricity, gas, emission)
       toast.success("데이터가 성공적으로 기록되었습니다!");
       
     } catch (e: any) {
@@ -679,7 +667,7 @@ function MainContent() {
         try {
           await saveCertification(nickname, newDate, description, gainedPoints, newId);
         } catch (saveError) {
-          console.error("인증 내역 구글 시트 저장 실패:", saveError);
+          console.error("인증 내역 D1 저장 실패:", saveError);
         }
 
         return { ok: true, earnedPoints: gainedPoints }

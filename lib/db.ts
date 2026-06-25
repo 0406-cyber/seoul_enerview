@@ -1,14 +1,15 @@
 "use server";
 
 import { getRequestContext } from '@cloudflare/next-on-pages';
+import type { UsageCarbonDetails } from "@/lib/carbon-categories";
 
 export type UsageRow = {
-  username: string;
+  username?: string;
   date: string;
   elec_kwh: number;
   gas_m3: number;
   co2_kg: number;
-};
+} & Partial<UsageCarbonDetails>;
 
 // Cloudflare Context로부터 D1 DB 인스턴스를 가져오는 헬퍼 함수
 function getDb() {
@@ -36,16 +37,79 @@ function todayYmd(): string {
   return `${y}-${m}-${day}`;
 }
 
+const round2 = (value: number | null | undefined): number => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parseFloat(parsed.toFixed(2)) : 0;
+};
+
+const textOrEmpty = (value: string | null | undefined): string => value ?? "";
+
 /** 1. 데이터 저장 기능 (usage 테이블) */
-export async function saveUsage(username: string, elec: number, gas: number, co2: number): Promise<void> {
+export async function saveUsage(
+  username: string,
+  elec: number,
+  gas: number,
+  co2: number,
+  details?: Partial<UsageCarbonDetails>
+): Promise<void> {
   const db = getDb();
   if (!db) throw new Error("D1 데이터베이스가 바인딩되지 않았습니다.");
 
-  await db.prepare(
-    "INSERT INTO usage (username, date, elec_kwh, gas_m3, co2_kg) VALUES (?, ?, ?, ?, ?)"
-  )
-  .bind(username, todayYmd(), elec, gas, parseFloat(co2.toFixed(2)))
-  .run();
+  const date = todayYmd();
+
+  try {
+    await db.prepare(
+      `INSERT INTO usage (
+        username, date, elec_kwh, gas_m3, co2_kg,
+        residential_co2_kg, transport_co2_kg, diet_co2_kg, annual_co2_kg,
+        car_annual_co2_kg, public_transit_annual_co2_kg, flight_annual_co2_kg, diet_annual_co2_kg,
+        car_pattern, public_transit_pattern, flight_pattern,
+        beef_meals_per_week, pork_meals_per_week, chicken_meals_per_week, seafood_meals_per_week, plant_meals_per_week
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      username,
+      date,
+      round2(elec),
+      round2(gas),
+      round2(co2),
+      round2(details?.residential_co2_kg),
+      round2(details?.transport_co2_kg),
+      round2(details?.diet_co2_kg),
+      round2(details?.annual_co2_kg),
+      round2(details?.car_annual_co2_kg),
+      round2(details?.public_transit_annual_co2_kg),
+      round2(details?.flight_annual_co2_kg),
+      round2(details?.diet_annual_co2_kg),
+      textOrEmpty(details?.car_pattern),
+      textOrEmpty(details?.public_transit_pattern),
+      textOrEmpty(details?.flight_pattern),
+      round2(details?.beef_meals_per_week),
+      round2(details?.pork_meals_per_week),
+      round2(details?.chicken_meals_per_week),
+      round2(details?.seafood_meals_per_week),
+      round2(details?.plant_meals_per_week)
+    )
+    .run();
+    return;
+  } catch (e: any) {
+    const message = String(e?.message ?? e);
+    const isLegacyUsageSchema =
+      message.includes("no column") ||
+      message.includes("has no column") ||
+      message.includes("table usage has no column") ||
+      message.includes("no such column");
+
+    if (!isLegacyUsageSchema) throw e;
+
+    // 기존 D1 usage 스키마에서도 앱이 멈추지 않도록 총량만 저장합니다.
+    // 교통·식단 세부값까지 DB에 저장하려면 migrations/usage-carbon-categories.sql을 먼저 적용하세요.
+    await db.prepare(
+      "INSERT INTO usage (username, date, elec_kwh, gas_m3, co2_kg) VALUES (?, ?, ?, ?, ?)"
+    )
+    .bind(username, date, round2(elec), round2(gas), round2(co2))
+    .run();
+  }
 }
 
 /** 2. 로그인 및 횟수 업데이트 (users 테이블) */
@@ -277,19 +341,65 @@ export async function getSystemLogs(): Promise<any[]> {
   }));
 }
 
-/** 18. 사용자의 가스/전기 이력 조회 (usage 테이블) */
-export async function getUsageHistory(username: string): Promise<any[]> {
+/** 18. 사용자의 가스/전기/교통/식단 이력 조회 (usage 테이블) */
+export async function getUsageHistory(username: string): Promise<UsageRow[]> {
   const db = getDb();
   if (!db) return [];
 
-  const { results } = await db.prepare("SELECT date, elec_kwh, gas_m3, co2_kg FROM usage WHERE username = ? ORDER BY id ASC").bind(username).all();
-  
-  return results.map((row: any) => ({
-    date: row.date,
-    elec_kwh: row.elec_kwh,
-    gas_m3: row.gas_m3,
-    co2_kg: row.co2_kg,
-  }));
+  try {
+    const { results } = await db.prepare(
+      `SELECT
+        date, elec_kwh, gas_m3, co2_kg,
+        residential_co2_kg, transport_co2_kg, diet_co2_kg, annual_co2_kg,
+        car_annual_co2_kg, public_transit_annual_co2_kg, flight_annual_co2_kg, diet_annual_co2_kg,
+        car_pattern, public_transit_pattern, flight_pattern,
+        beef_meals_per_week, pork_meals_per_week, chicken_meals_per_week, seafood_meals_per_week, plant_meals_per_week
+       FROM usage
+       WHERE username = ?
+       ORDER BY id ASC`
+    ).bind(username).all();
+
+    return results.map((row: any) => ({
+      date: row.date,
+      elec_kwh: Number(row.elec_kwh) || 0,
+      gas_m3: Number(row.gas_m3) || 0,
+      co2_kg: Number(row.co2_kg) || 0,
+      residential_co2_kg: Number(row.residential_co2_kg) || 0,
+      transport_co2_kg: Number(row.transport_co2_kg) || 0,
+      diet_co2_kg: Number(row.diet_co2_kg) || 0,
+      annual_co2_kg: Number(row.annual_co2_kg) || 0,
+      car_annual_co2_kg: Number(row.car_annual_co2_kg) || 0,
+      public_transit_annual_co2_kg: Number(row.public_transit_annual_co2_kg) || 0,
+      flight_annual_co2_kg: Number(row.flight_annual_co2_kg) || 0,
+      diet_annual_co2_kg: Number(row.diet_annual_co2_kg) || 0,
+      car_pattern: row.car_pattern,
+      public_transit_pattern: row.public_transit_pattern,
+      flight_pattern: row.flight_pattern,
+      beef_meals_per_week: Number(row.beef_meals_per_week) || 0,
+      pork_meals_per_week: Number(row.pork_meals_per_week) || 0,
+      chicken_meals_per_week: Number(row.chicken_meals_per_week) || 0,
+      seafood_meals_per_week: Number(row.seafood_meals_per_week) || 0,
+      plant_meals_per_week: Number(row.plant_meals_per_week) || 0,
+    }));
+  } catch (e: any) {
+    const message = String(e?.message ?? e);
+    const isLegacyUsageSchema =
+      message.includes("no column") ||
+      message.includes("no such column");
+
+    if (!isLegacyUsageSchema) throw e;
+
+    const { results } = await db.prepare(
+      "SELECT date, elec_kwh, gas_m3, co2_kg FROM usage WHERE username = ? ORDER BY id ASC"
+    ).bind(username).all();
+
+    return results.map((row: any) => ({
+      date: row.date,
+      elec_kwh: Number(row.elec_kwh) || 0,
+      gas_m3: Number(row.gas_m3) || 0,
+      co2_kg: Number(row.co2_kg) || 0,
+    }));
+  }
 }
 
 /** 19. 친환경 인증 타임라인 라인업 추가 (certifications 테이블) */

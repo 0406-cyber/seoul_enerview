@@ -194,3 +194,126 @@ export function calculateCarbonBreakdown(
     },
   }
 }
+
+export interface UsageCarbonDetails {
+  residential_co2_kg: number
+  transport_co2_kg: number
+  diet_co2_kg: number
+  annual_co2_kg: number
+  car_annual_co2_kg: number
+  public_transit_annual_co2_kg: number
+  flight_annual_co2_kg: number
+  diet_annual_co2_kg: number
+  car_pattern: CarPattern
+  public_transit_pattern: PublicTransitPattern
+  flight_pattern: FlightPattern
+  beef_meals_per_week: number
+  pork_meals_per_week: number
+  chicken_meals_per_week: number
+  seafood_meals_per_week: number
+  plant_meals_per_week: number
+}
+
+const hasValue = (value: unknown) => value !== null && value !== undefined && value !== ""
+
+const numberOrDefault = (value: unknown, fallback = 0): number => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+const isOptionValue = <T extends readonly { value: string }[]>(options: T, value: unknown): value is T[number]["value"] => {
+  return typeof value === "string" && options.some((option) => option.value === value)
+}
+
+export function createUsageCarbonDetails(
+  inputs: CarbonCategoryInputValues,
+  breakdown: CarbonBreakdown
+): UsageCarbonDetails {
+  return {
+    residential_co2_kg: breakdown.residentialMonthlyKg,
+    transport_co2_kg: breakdown.transportMonthlyKg,
+    diet_co2_kg: breakdown.dietMonthlyKg,
+    annual_co2_kg: breakdown.annualKg,
+    car_annual_co2_kg: breakdown.details.carAnnualKg,
+    public_transit_annual_co2_kg: breakdown.details.publicTransitAnnualKg,
+    flight_annual_co2_kg: breakdown.details.flightAnnualKg,
+    diet_annual_co2_kg: breakdown.details.dietAnnualKg,
+    car_pattern: inputs.carPattern,
+    public_transit_pattern: inputs.publicTransitPattern,
+    flight_pattern: inputs.flightPattern,
+    beef_meals_per_week: inputs.beefMealsPerWeek,
+    pork_meals_per_week: inputs.porkMealsPerWeek,
+    chicken_meals_per_week: inputs.chickenMealsPerWeek,
+    seafood_meals_per_week: inputs.seafoodMealsPerWeek,
+    plant_meals_per_week: inputs.plantMealsPerWeek,
+  }
+}
+
+export function restoreCarbonCategoryInputsFromUsage(
+  record: Partial<UsageCarbonDetails>
+): CarbonCategoryInputValues | null {
+  if (
+    !hasValue(record.car_pattern) &&
+    !hasValue(record.public_transit_pattern) &&
+    !hasValue(record.flight_pattern) &&
+    !hasValue(record.beef_meals_per_week) &&
+    !hasValue(record.pork_meals_per_week) &&
+    !hasValue(record.chicken_meals_per_week) &&
+    !hasValue(record.seafood_meals_per_week) &&
+    !hasValue(record.plant_meals_per_week)
+  ) {
+    return null
+  }
+
+  return {
+    carPattern: isOptionValue(CAR_PATTERN_OPTIONS, record.car_pattern)
+      ? record.car_pattern
+      : DEFAULT_CARBON_CATEGORY_INPUTS.carPattern,
+    publicTransitPattern: isOptionValue(PUBLIC_TRANSIT_PATTERN_OPTIONS, record.public_transit_pattern)
+      ? record.public_transit_pattern
+      : DEFAULT_CARBON_CATEGORY_INPUTS.publicTransitPattern,
+    flightPattern: isOptionValue(FLIGHT_PATTERN_OPTIONS, record.flight_pattern)
+      ? record.flight_pattern
+      : DEFAULT_CARBON_CATEGORY_INPUTS.flightPattern,
+    beefMealsPerWeek: numberOrDefault(record.beef_meals_per_week),
+    porkMealsPerWeek: numberOrDefault(record.pork_meals_per_week),
+    chickenMealsPerWeek: numberOrDefault(record.chicken_meals_per_week),
+    seafoodMealsPerWeek: numberOrDefault(record.seafood_meals_per_week),
+    plantMealsPerWeek: numberOrDefault(record.plant_meals_per_week),
+  }
+}
+
+export function restoreCarbonBreakdownFromUsage(
+  record: Partial<UsageCarbonDetails> & { co2_kg?: number }
+): CarbonBreakdown | null {
+  if (
+    !hasValue(record.residential_co2_kg) &&
+    !hasValue(record.transport_co2_kg) &&
+    !hasValue(record.diet_co2_kg) &&
+    !hasValue(record.annual_co2_kg)
+  ) {
+    return null
+  }
+
+  const residentialMonthlyKg = numberOrDefault(record.residential_co2_kg)
+  const transportMonthlyKg = numberOrDefault(record.transport_co2_kg)
+  const dietMonthlyKg = numberOrDefault(record.diet_co2_kg)
+  const totalMonthlyKg = numberOrDefault(
+    record.co2_kg,
+    residentialMonthlyKg + transportMonthlyKg + dietMonthlyKg
+  )
+
+  return {
+    residentialMonthlyKg,
+    transportMonthlyKg,
+    dietMonthlyKg,
+    totalMonthlyKg,
+    annualKg: numberOrDefault(record.annual_co2_kg, totalMonthlyKg * 12),
+    details: {
+      carAnnualKg: numberOrDefault(record.car_annual_co2_kg),
+      publicTransitAnnualKg: numberOrDefault(record.public_transit_annual_co2_kg),
+      flightAnnualKg: numberOrDefault(record.flight_annual_co2_kg),
+      dietAnnualKg: numberOrDefault(record.diet_annual_co2_kg),
+    },
+  }
+}

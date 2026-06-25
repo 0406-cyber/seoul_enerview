@@ -39,7 +39,7 @@ export const TAB_META: TabMeta[] = [
     id: "analysis",
     navLabel: "분석",
     title: "탄소 분석",
-    subtitle: "전기·가스 사용량을 기록하고 배출량을 추적해요",
+    subtitle: "교통·식단·주거 패턴을 기록하고 개인 탄소 배출량을 추적해요",
     Icon: BarChart3,
   },
   {
