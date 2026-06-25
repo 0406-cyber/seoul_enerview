@@ -530,9 +530,6 @@ export function AnalysisTab({
               교통 · 식단 · 주거 기록
             </h2>
           </div>
-          <span className="hidden md:inline-flex text-xs text-muted-foreground bg-black/5 dark:bg-white/5 px-3 py-2 rounded-full border border-black/10 dark:border-white/10">
-            선택식 + 대표값 매핑 방식
-          </span>
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 md:gap-6">
