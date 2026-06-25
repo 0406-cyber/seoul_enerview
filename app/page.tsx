@@ -36,6 +36,12 @@ import {
 } from "@/lib/db"
 import { loadUsageHistory, appendUsageLocal, type UsageRecord } from "@/lib/usage-storage"
 import { loadPoints, savePoints } from "@/lib/points-storage"
+import {
+  DEFAULT_CARBON_CATEGORY_INPUTS,
+  calculateCarbonBreakdown,
+  type CarbonBreakdown,
+  type CarbonCategoryInputValues,
+} from "@/lib/carbon-categories"
 import { AppShell } from "@/components/app/app-shell"
 import { AppContainer } from "@/components/app/app-container"
 import { AppHeader } from "@/components/app/app-header"
@@ -113,6 +119,9 @@ function MainContent() {
   const [electricityUsage, setElectricityUsage] = useState("")
   const [gasUsage, setGasUsage] = useState("")
   const [carbonEmission, setCarbonEmission] = useState<number | null>(null)
+  const [carbonBreakdown, setCarbonBreakdown] = useState<CarbonBreakdown | null>(null)
+  const [carbonCategoryInputs, setCarbonCategoryInputs] = useState<CarbonCategoryInputValues>(DEFAULT_CARBON_CATEGORY_INPUTS)
+  const [isCarbonInputHydrated, setIsCarbonInputHydrated] = useState(false)
   const [usageHistory, setUsageHistory] = useState<UsageRecord[]>([])
   const [isSavingUsage, setIsSavingUsage] = useState(false)
 
@@ -204,6 +213,42 @@ function MainContent() {
     
     syncWithServer();
   }, [nickname, mounted]);
+
+  useEffect(() => {
+    if (!nickname || !mounted) return;
+
+    setIsCarbonInputHydrated(false);
+
+    try {
+      const raw = localStorage.getItem(`eco_carbon_category_inputs_${nickname}`);
+      setCarbonCategoryInputs(
+        raw
+          ? {
+              ...DEFAULT_CARBON_CATEGORY_INPUTS,
+              ...JSON.parse(raw),
+            }
+          : DEFAULT_CARBON_CATEGORY_INPUTS
+      );
+    } catch (e) {
+      console.error("탄소 카테고리 입력값 로딩 실패:", e);
+      setCarbonCategoryInputs(DEFAULT_CARBON_CATEGORY_INPUTS);
+    } finally {
+      setIsCarbonInputHydrated(true);
+    }
+  }, [nickname, mounted]);
+
+  useEffect(() => {
+    if (!nickname || !mounted || !isCarbonInputHydrated) return;
+
+    try {
+      localStorage.setItem(
+        `eco_carbon_category_inputs_${nickname}`,
+        JSON.stringify(carbonCategoryInputs)
+      );
+    } catch (e) {
+      console.error("탄소 카테고리 입력값 저장 실패:", e);
+    }
+  }, [carbonCategoryInputs, isCarbonInputHydrated, nickname, mounted]);
 
   useEffect(() => {
     if (isOnboarded && nickname && nickname !== "admin") {
@@ -353,8 +398,22 @@ function MainContent() {
     setIsOnboarded(false);
     setIsAdminAuthenticated(false);
     setAdminPassword("");
+    setCarbonBreakdown(null);
+    setCarbonCategoryInputs(DEFAULT_CARBON_CATEGORY_INPUTS);
+    setIsCarbonInputHydrated(false);
     toast.success("로그아웃 되었습니다.");
   }, []);
+
+  const handleCarbonCategoryInputChange = useCallback(
+    (key: keyof CarbonCategoryInputValues, value: string | number) => {
+      setCarbonCategoryInputs((prev) => ({
+        ...prev,
+        [key]: typeof value === "number" ? Math.max(0, value) : value,
+      }) as CarbonCategoryInputValues);
+      setCarbonBreakdown(null);
+    },
+    []
+  );
 
   const handleCalculate = useCallback(async () => {
     if (!nickname) {
@@ -368,7 +427,11 @@ function MainContent() {
       const electricity = parseFloat(electricityUsage) || 0
       const gas = parseFloat(gasUsage) || 0
       
-      const emission = await computeCo2Kg(electricity, gas)
+      const residentialEmission = await computeCo2Kg(electricity, gas)
+      const breakdown = calculateCarbonBreakdown(residentialEmission, carbonCategoryInputs)
+      const emission = breakdown.totalMonthlyKg
+
+      setCarbonBreakdown(breakdown)
       setCarbonEmission(emission)
       
       const row: UsageRecord = {
@@ -389,7 +452,7 @@ function MainContent() {
     } finally {
       setIsSavingUsage(false)
     }
-  }, [nickname, electricityUsage, gasUsage])
+  }, [nickname, electricityUsage, gasUsage, carbonCategoryInputs])
 
   const handleSendMessage = useCallback(async (content: string) => {
     const userMessageId = Date.now().toString();
@@ -487,7 +550,10 @@ function MainContent() {
         }
 
         const latest = usageHistory[usageHistory.length - 1];
-        const prompt = `사용자가 이번 달에 전기 ${latest.elec_kwh}kWh, 가스 ${latest.gas_m3}m3를 사용하여 총 ${latest.co2_kg.toFixed(2)}kg의 탄소를 배출했어. 이 사용자에게 에너지 절약을 독려하고 실생활에서 실천할 수 있는 팁을 친절하게 한국어로 조언해줘.`;
+        const categorySummary = carbonBreakdown
+          ? `교통 ${carbonBreakdown.transportMonthlyKg.toFixed(2)}kg, 식단 ${carbonBreakdown.dietMonthlyKg.toFixed(2)}kg, 주거 ${carbonBreakdown.residentialMonthlyKg.toFixed(2)}kg`
+          : "세부 카테고리 정보 없음";
+        const prompt = `사용자가 이번 달 기준으로 총 ${latest.co2_kg.toFixed(2)}kg의 탄소를 배출했어. 세부 정보는 ${categorySummary}이야. 전기 ${latest.elec_kwh}kWh, 가스 ${latest.gas_m3}m3도 입력되어 있어. 교통, 식단, 주거 중 감축 여지가 큰 항목을 우선순위로 잡아 실생활에서 실천할 수 있는 팁을 친절하게 한국어로 조언해줘.`;
 
         const userMessageId = Date.now().toString();
         if (nickname) {
@@ -544,7 +610,7 @@ function MainContent() {
       } finally {
         setIsCoachingLoading(false);
       }
-    }, [usageHistory, nickname]);
+    }, [usageHistory, nickname, carbonBreakdown]);
 
   const handleCertify = useCallback(async (): Promise<{
     ok: boolean
@@ -871,8 +937,11 @@ function MainContent() {
             gasUsage={gasUsage}
             onElectricityChange={setElectricityUsage}
             onGasChange={setGasUsage}
+            carbonCategoryInputs={carbonCategoryInputs}
+            onCarbonCategoryInputChange={handleCarbonCategoryInputChange}
             onCalculate={handleCalculate}
             carbonEmission={carbonEmission}
+            carbonBreakdown={carbonBreakdown}
             chartData={chartData}
             isSaving={isSavingUsage}
           />
