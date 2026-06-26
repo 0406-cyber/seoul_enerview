@@ -120,6 +120,57 @@ const inverseCalculateKwh = (targetBill: number): number => {
   return Number(mid.toFixed(1));
 };
 
+// 도시가스 요금에서 m³를 역산하기 위한 계산 함수
+// 도시가스는 지역/공급사/용도/계절별 단가가 달라질 수 있으므로
+// 실제 서비스 지역 고지서 기준으로 아래 상수만 조정하면 됩니다.
+const GAS_BILL_CONFIG = {
+  basicFee: 1000,
+  unitPricePerMj: 22.0,
+  correctionFactor: 1.0,
+  averageCalorificValueMjPerM3: 43.0,
+  vatRate: 0.1,
+} as const;
+
+const calculateGasBill = (m3: number): number => {
+  if (m3 <= 0) return 0;
+
+  const usageMj =
+    m3 *
+    GAS_BILL_CONFIG.correctionFactor *
+    GAS_BILL_CONFIG.averageCalorificValueMjPerM3;
+  const usageCharge = usageMj * GAS_BILL_CONFIG.unitPricePerMj;
+  const pureTotal = GAS_BILL_CONFIG.basicFee + usageCharge;
+  const vat = Math.round(pureTotal * GAS_BILL_CONFIG.vatRate);
+  const total = pureTotal + vat;
+
+  // 최종 청구금액 (10원 단위 미만 절사)
+  return Math.floor(total / 10) * 10;
+};
+
+const inverseCalculateGasM3 = (targetBill: number): number => {
+  if (targetBill <= 0) return 0;
+
+  let low = 0;
+  let high = 10000; // 일반 가정 최대치를 넘어가는 여유 탐색 범위
+  let mid = 0;
+
+  // 10원 단위 절사로 인한 계단식 값을 이분 탐색(Binary Search)으로 추적
+  for (let i = 0; i < 100; i++) {
+    mid = (low + high) / 2;
+    const currentBill = calculateGasBill(mid);
+
+    if (currentBill === targetBill) {
+      break;
+    } else if (currentBill < targetBill) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  return Number(mid.toFixed(1));
+};
+
 const formatKg = (value: number | null | undefined, digits = 1) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return `${value.toFixed(digits)}kg`;
@@ -271,7 +322,12 @@ export function AnalysisTab({
       : "";
   });
 
-  // 외부(부모 컴포넌트)에서 초기화되거나 값이 변경될 때 로컬 요금 상태를 동기화
+  // 입력된 가스요금을 시각적으로 관리하기 위한 로컬 상태
+  const [gasBill, setGasBill] = useState(() => {
+    return gasUsage ? String(calculateGasBill(Number(gasUsage))) : "";
+  });
+
+  // 외부(부모 컴포넌트)에서 초기화되거나 값이 변경될 때 로컬 전기요금 상태를 동기화
   useEffect(() => {
     if (!electricityUsage) {
       setElectricityBill("");
@@ -284,6 +340,20 @@ export function AnalysisTab({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [electricityUsage]);
+
+  // 외부(부모 컴포넌트)에서 초기화되거나 값이 변경될 때 로컬 가스요금 상태를 동기화
+  useEffect(() => {
+    if (!gasUsage) {
+      setGasBill("");
+    } else {
+      const currentM3 = inverseCalculateGasM3(Number(gasBill));
+      // 부모의 m³가 현재 화면의 요금에서 역산된 m³와 다르다면 외부에서 덮어씌운 것으로 간주하여 동기화
+      if (Number(gasUsage) !== currentM3) {
+        setGasBill(String(calculateGasBill(Number(gasUsage))));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gasUsage]);
 
   const stats = useMemo(() => {
     const last = chartData.at(-1)?.carbon ?? null;
@@ -351,6 +421,19 @@ export function AnalysisTab({
     } else {
       const kwh = inverseCalculateKwh(Number(bill));
       onElectricityChange(kwh.toString());
+    }
+  };
+
+  // 요금 입력 시 m³로 역산하여 전달
+  const handleGasChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const bill = e.target.value;
+    setGasBill(bill);
+
+    if (!bill || isNaN(Number(bill))) {
+      onGasChange("");
+    } else {
+      const m3 = inverseCalculateGasM3(Number(bill));
+      onGasChange(m3.toString());
     }
   };
 
@@ -636,7 +719,7 @@ export function AnalysisTab({
           <CategoryCard
             icon={<Utensils className="w-5 h-5 text-primary" />}
             title="식단"
-            subtitle="1주일 기준 섭취량(kg)을 입력합니다. 엑셀의 kgCO₂e/kg 계수로 월간 배출량을 환산합니다."
+            subtitle="1주일 기준 섭취량(kg)을 입력합니다."
           >
             <div className="grid grid-cols-2 gap-3">
               <MealInput
@@ -695,7 +778,7 @@ export function AnalysisTab({
           <CategoryCard
             icon={<Home className="w-5 h-5 text-primary" />}
             title="주거"
-            subtitle="기존 전기요금·가스 사용량 입력을 하나의 주거 카테고리로 묶었습니다."
+            subtitle="해당 수치는 금액으로부터 역환산 한 값이며 오차가 있을 수 있음."
           >
             <div className="space-y-4">
               <div className="space-y-2">
@@ -727,19 +810,26 @@ export function AnalysisTab({
               <div className="space-y-2">
                 <label className="flex items-center gap-2 text-xs font-bold text-muted-foreground ml-2 uppercase tracking-widest">
                   <Flame className="w-4 h-4 text-orange-500" /> Natural Gas
+                  (요금 역산)
                 </label>
                 <div className="relative group">
                   <input
                     type="number"
-                    value={gasUsage}
-                    onChange={(e) => onGasChange(e.target.value)}
-                    placeholder="0"
+                    value={gasBill}
+                    onChange={handleGasChange}
+                    placeholder="가스요금 입력"
                     className="w-full bg-black/5 dark:bg-white/5 rounded-2xl px-6 py-5 text-xl font-bold text-foreground placeholder:text-muted-foreground/50 border border-black/10 dark:border-white/5 focus:border-primary/50 focus:bg-black/10 dark:focus:bg-white/10 outline-none transition-all"
                   />
                   <span className="absolute right-6 top-1/2 -translate-y-1/2 text-muted-foreground font-bold">
-                    m³
+                    원
                   </span>
                 </div>
+                {gasUsage && (
+                  <p className="text-xs text-right text-muted-foreground mr-2 font-medium">
+                    도시가스 요금 환산 시 약{" "}
+                    <span className="text-primary">{gasUsage}</span> m³ 사용됨
+                  </p>
+                )}
               </div>
 
               <button
@@ -853,25 +943,6 @@ export function AnalysisTab({
         </p>
         <ul className="list-disc list-inside space-y-1 ml-1">
           <li>
-            교통·식단 대표값은 업로드된 <code>탄소배출계수.xlsx</code> 기준입니다.
-          </li>
-          <li>
-            차량 중심 선택 시 주간 이동거리 30km, 80km, 185km, 400km와 차량 종류별 계수를 함께 적용합니다.
-          </li>
-          <li>
-            대중교통 중심 선택 시 편도 5km, 12km, 25km와 지하철/버스 계수를 함께 적용합니다.
-          </li>
-          <li>
-            비행기는 엑셀의 편도 거리 대표값을 왕복 거리로 환산한 뒤 연간 횟수를 곱하고 월 기준으로
-            나눠 반영합니다.
-          </li>
-          <li>
-            식단은 1주일 섭취량(kg)을 엑셀의 kgCO₂e/kg 계수로 연간화한 뒤 월 기준으로 나눠 반영합니다.
-          </li>
-          <li>
-            엑셀의 이동거리 대표값은 음수로 입력되어 있으나, 배출량 계산에는 이동거리의 절댓값을 사용했습니다.
-          </li>
-          <li>
             전기요금 역산 기준: 한국전력 주택용 고압, 기타계절 기준의 참고용
             근사치입니다.
           </li>
@@ -882,6 +953,13 @@ export function AnalysisTab({
           <li>기본요금: 1단계 730원 / 2단계 1,260원 / 3단계 6,060원</li>
           <li>별도요금: 기후환경요금(9원/kWh) 및 연료비조정요금(5원/kWh)</li>
           <li>제세공과금: 부가가치세 10% 및 전력산업기반기금 2.7% 반영</li>
+          <li>
+            가스요금 역산 기준: 기본요금 {GAS_BILL_CONFIG.basicFee.toLocaleString()}원,
+            단가 {GAS_BILL_CONFIG.unitPricePerMj}원/MJ, 평균열량{" "}
+            {GAS_BILL_CONFIG.averageCalorificValueMjPerM3}MJ/m³, 보정계수{" "}
+            {GAS_BILL_CONFIG.correctionFactor}, 부가가치세 10%를 반영한 참고용
+            근사치입니다.
+          </li>
           <li>
             복지제도 적용, 기타 할인 적용 등에 따라 오차가 발생할 수 있습니다.
           </li>
