@@ -35,6 +35,7 @@ import {
   calculateCarbonBreakdown,
   CAR_PATTERN_OPTIONS,
   PUBLIC_TRANSIT_PATTERN_OPTIONS,
+  PUBLIC_TRANSIT_DISTANCE_OPTIONS,
   FLIGHT_PATTERN_OPTIONS,
   FLIGHT_COUNT_OPTIONS,
   EMISSION_FACTORS,
@@ -303,6 +304,8 @@ export function AnalysisTab({
     () => calculateCarbonBreakdown(0, carbonCategoryInputs),
     [carbonCategoryInputs],
   );
+  const shouldShowPublicTransitDistance =
+    carbonCategoryInputs.publicTransitPattern !== "walkBike";
 
   const visibleBreakdown = carbonBreakdown ?? lifestylePreview;
   const hasResidentialInput = Boolean(electricityUsage || gasUsage);
@@ -551,10 +554,26 @@ export function AnalysisTab({
                 label="주간 이동수단"
                 value={carbonCategoryInputs.publicTransitPattern}
                 options={PUBLIC_TRANSIT_PATTERN_OPTIONS}
-                onChange={(value) =>
-                  onCarbonCategoryInputChange("publicTransitPattern", value)
-                }
+                onChange={(value) => {
+                  onCarbonCategoryInputChange("publicTransitPattern", value);
+                  if (value === "walkBike") {
+                    onCarbonCategoryInputChange(
+                      "publicTransitDistance",
+                      PUBLIC_TRANSIT_DISTANCE_OPTIONS[0].value,
+                    );
+                  }
+                }}
               />
+              {shouldShowPublicTransitDistance && (
+                <SelectBlock
+                  label="이동 거리"
+                  value={carbonCategoryInputs.publicTransitDistance}
+                  options={PUBLIC_TRANSIT_DISTANCE_OPTIONS}
+                  onChange={(value) =>
+                    onCarbonCategoryInputChange("publicTransitDistance", value)
+                  }
+                />
+              )}
               <SelectBlock
                 label="연간 비행거리"
                 value={carbonCategoryInputs.flightPattern}
@@ -815,6 +834,10 @@ export function AnalysisTab({
           </li>
           <li>
             주행 패턴은 주간 km를 연간화한 뒤 월 기준으로 나눠 반영합니다.
+          </li>
+          <li>
+            주간 이동수단이 도보·자전거 중심이 아닌 경우 이동 거리 대표값은
+            가까운 거리 3km, 중간 거리 8km, 장거리 25km/회로 반영합니다.
           </li>
           <li>
             비행기는 최근 1년 왕복 거리 패턴과 연간 횟수를 곱한 뒤 월 기준으로

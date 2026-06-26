@@ -85,6 +85,21 @@ export async function saveUsage(
     textOrEmpty(details?.flight_pattern),
   ];
 
+  const extendedValuesWithDistance = [
+    round2(details?.residential_co2_kg),
+    round2(details?.transport_co2_kg),
+    round2(details?.diet_co2_kg),
+    round2(details?.annual_co2_kg),
+    round2(details?.car_annual_co2_kg),
+    round2(details?.public_transit_annual_co2_kg),
+    round2(details?.flight_annual_co2_kg),
+    round2(details?.diet_annual_co2_kg),
+    textOrEmpty(details?.car_pattern),
+    textOrEmpty(details?.public_transit_pattern),
+    textOrEmpty(details?.public_transit_distance),
+    textOrEmpty(details?.flight_pattern),
+  ];
+
   const mealValues = [
     round2(details?.beef_meals_per_week),
     round2(details?.pork_meals_per_week),
@@ -92,6 +107,29 @@ export async function saveUsage(
     round2(details?.seafood_meals_per_week),
     round2(details?.plant_meals_per_week),
   ];
+
+  try {
+    await db
+      .prepare(
+        `INSERT INTO usage (
+        username, date, elec_kwh, gas_m3, co2_kg,
+        residential_co2_kg, transport_co2_kg, diet_co2_kg, annual_co2_kg,
+        car_annual_co2_kg, public_transit_annual_co2_kg, flight_annual_co2_kg, diet_annual_co2_kg,
+        car_pattern, public_transit_pattern, public_transit_distance, flight_pattern, flight_trips_per_year,
+        beef_meals_per_week, pork_meals_per_week, chicken_meals_per_week, seafood_meals_per_week, plant_meals_per_week
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        ...baseValues,
+        ...extendedValuesWithDistance,
+        round2(details?.flight_trips_per_year),
+        ...mealValues,
+      )
+      .run();
+    return;
+  } catch (e) {
+    if (!isMissingColumnError(e)) throw e;
+  }
 
   try {
     await db
@@ -470,7 +508,10 @@ export async function getUsageHistory(username: string): Promise<UsageRow[]> {
   const db = getDb();
   if (!db) return [];
 
-  const mapUsageRow = (row: any, includeFlightTrips: boolean): UsageRow => ({
+  const mapUsageRow = (
+    row: any,
+    options: { includeFlightTrips: boolean; includePublicTransitDistance: boolean },
+  ): UsageRow => ({
     date: row.date,
     elec_kwh: Number(row.elec_kwh) || 0,
     gas_m3: Number(row.gas_m3) || 0,
@@ -485,8 +526,11 @@ export async function getUsageHistory(username: string): Promise<UsageRow[]> {
     diet_annual_co2_kg: Number(row.diet_annual_co2_kg) || 0,
     car_pattern: row.car_pattern,
     public_transit_pattern: row.public_transit_pattern,
+    ...(options.includePublicTransitDistance
+      ? { public_transit_distance: row.public_transit_distance }
+      : {}),
     flight_pattern: row.flight_pattern,
-    ...(includeFlightTrips &&
+    ...(options.includeFlightTrips &&
     row.flight_trips_per_year !== null &&
     row.flight_trips_per_year !== undefined
       ? { flight_trips_per_year: Number(row.flight_trips_per_year) || 0 }
@@ -505,6 +549,32 @@ export async function getUsageHistory(username: string): Promise<UsageRow[]> {
         date, elec_kwh, gas_m3, co2_kg,
         residential_co2_kg, transport_co2_kg, diet_co2_kg, annual_co2_kg,
         car_annual_co2_kg, public_transit_annual_co2_kg, flight_annual_co2_kg, diet_annual_co2_kg,
+        car_pattern, public_transit_pattern, public_transit_distance, flight_pattern, flight_trips_per_year,
+        beef_meals_per_week, pork_meals_per_week, chicken_meals_per_week, seafood_meals_per_week, plant_meals_per_week
+       FROM usage
+       WHERE username = ?
+       ORDER BY id ASC`,
+      )
+      .bind(username)
+      .all();
+
+    return results.map((row: any) =>
+      mapUsageRow(row, {
+        includeFlightTrips: true,
+        includePublicTransitDistance: true,
+      }),
+    );
+  } catch (e) {
+    if (!isMissingColumnError(e)) throw e;
+  }
+
+  try {
+    const { results } = await db
+      .prepare(
+        `SELECT
+        date, elec_kwh, gas_m3, co2_kg,
+        residential_co2_kg, transport_co2_kg, diet_co2_kg, annual_co2_kg,
+        car_annual_co2_kg, public_transit_annual_co2_kg, flight_annual_co2_kg, diet_annual_co2_kg,
         car_pattern, public_transit_pattern, flight_pattern, flight_trips_per_year,
         beef_meals_per_week, pork_meals_per_week, chicken_meals_per_week, seafood_meals_per_week, plant_meals_per_week
        FROM usage
@@ -514,7 +584,12 @@ export async function getUsageHistory(username: string): Promise<UsageRow[]> {
       .bind(username)
       .all();
 
-    return results.map((row: any) => mapUsageRow(row, true));
+    return results.map((row: any) =>
+      mapUsageRow(row, {
+        includeFlightTrips: true,
+        includePublicTransitDistance: false,
+      }),
+    );
   } catch (e) {
     if (!isMissingColumnError(e)) throw e;
   }
@@ -535,7 +610,12 @@ export async function getUsageHistory(username: string): Promise<UsageRow[]> {
       .bind(username)
       .all();
 
-    return results.map((row: any) => mapUsageRow(row, false));
+    return results.map((row: any) =>
+      mapUsageRow(row, {
+        includeFlightTrips: false,
+        includePublicTransitDistance: false,
+      }),
+    );
   } catch (e) {
     if (!isMissingColumnError(e)) throw e;
   }

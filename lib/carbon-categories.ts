@@ -37,7 +37,7 @@ export const PUBLIC_TRANSIT_PATTERN_OPTIONS = [
   {
     value: "metroBus",
     label: "지하철·버스 중심",
-    description: "주 10회, 1회 평균 8km 가정",
+    description: "주 10회 기준, 이동 거리는 아래에서 선택",
     weeklyTrips: 10,
     averageKmPerTrip: 8,
     kgPerKm: 0.045,
@@ -45,10 +45,31 @@ export const PUBLIC_TRANSIT_PATTERN_OPTIONS = [
   {
     value: "carCommute",
     label: "자가용 중심",
-    description: "주 10회, 1회 평균 8km 가정",
+    description: "주 10회 기준, 이동 거리는 아래에서 선택",
     weeklyTrips: 10,
     averageKmPerTrip: 8,
     kgPerKm: 0.192,
+  },
+] as const;
+
+export const PUBLIC_TRANSIT_DISTANCE_OPTIONS = [
+  {
+    value: "near",
+    label: "가까운 거리",
+    description: "2~3정거장 수준, 1회 평균 3km 가정",
+    averageKmPerTrip: 3,
+  },
+  {
+    value: "medium",
+    label: "중간 거리",
+    description: "도시 내 이동 수준, 1회 평균 8km 가정",
+    averageKmPerTrip: 8,
+  },
+  {
+    value: "long",
+    label: "장거리(수도권 광역)",
+    description: "광역 통근·외곽 이동 수준, 1회 평균 25km 가정",
+    averageKmPerTrip: 25,
   },
 ] as const;
 
@@ -127,11 +148,14 @@ export const FLIGHT_COUNT_OPTIONS = [
 export type CarPattern = (typeof CAR_PATTERN_OPTIONS)[number]["value"];
 export type PublicTransitPattern =
   (typeof PUBLIC_TRANSIT_PATTERN_OPTIONS)[number]["value"];
+export type PublicTransitDistance =
+  (typeof PUBLIC_TRANSIT_DISTANCE_OPTIONS)[number]["value"];
 export type FlightPattern = (typeof FLIGHT_PATTERN_OPTIONS)[number]["value"];
 
 export interface CarbonCategoryInputValues {
   carPattern: CarPattern;
   publicTransitPattern: PublicTransitPattern;
+  publicTransitDistance: PublicTransitDistance;
   flightPattern: FlightPattern;
   flightTripsPerYear: number;
   beefMealsPerWeek: number;
@@ -158,6 +182,7 @@ export interface CarbonBreakdown {
 export const DEFAULT_CARBON_CATEGORY_INPUTS: CarbonCategoryInputValues = {
   carPattern: "none",
   publicTransitPattern: "walkBike",
+  publicTransitDistance: "near",
   flightPattern: "none",
   flightTripsPerYear: 0,
   beefMealsPerWeek: 0,
@@ -170,14 +195,14 @@ export const DEFAULT_CARBON_CATEGORY_INPUTS: CarbonCategoryInputValues = {
 // TODO: 대표값 확정 시 아래 계수만 교체하면 UI/저장 흐름은 그대로 유지됩니다.
 // 단위: kgCO2e
 export const EMISSION_FACTORS = {
-  passengerCarKgPerKm: 0,
-  flightKgPerPassengerKm: 0,
+  passengerCarKgPerKm: 0.192,
+  flightKgPerPassengerKm: 0.15,
   mealKg: {
-    beef: 0,
-    pork: 0,
-    chicken: 0,
-    seafood: 0,
-    plant: 0,
+    beef: 9.5,
+    pork: 1.6,
+    chicken: 1.4,
+    seafood: 1.3,
+    plant: 0.5,
   },
 } as const;
 
@@ -202,16 +227,22 @@ export function calculateCarbonBreakdown(
     PUBLIC_TRANSIT_PATTERN_OPTIONS,
     inputs.publicTransitPattern,
   );
+  const publicTransitDistance = getByValue(
+    PUBLIC_TRANSIT_DISTANCE_OPTIONS,
+    inputs.publicTransitDistance,
+  );
   const flight = getByValue(FLIGHT_PATTERN_OPTIONS, inputs.flightPattern);
   const flightTripsPerYear =
     flight.value === "none" ? 0 : toSafeNumber(inputs.flightTripsPerYear);
 
   const carAnnualKg = car.weeklyKm * 52 * EMISSION_FACTORS.passengerCarKgPerKm;
   const publicTransitAnnualKg =
-    publicTransit.weeklyTrips *
-    publicTransit.averageKmPerTrip *
-    52 *
-    publicTransit.kgPerKm;
+    publicTransit.value === "walkBike"
+      ? 0
+      : publicTransit.weeklyTrips *
+        publicTransitDistance.averageKmPerTrip *
+        52 *
+        publicTransit.kgPerKm;
   const flightAnnualKg =
     flight.annualKm *
     flightTripsPerYear *
@@ -260,6 +291,7 @@ export interface UsageCarbonDetails {
   diet_annual_co2_kg: number;
   car_pattern: CarPattern;
   public_transit_pattern: PublicTransitPattern;
+  public_transit_distance: PublicTransitDistance;
   flight_pattern: FlightPattern;
   flight_trips_per_year: number;
   beef_meals_per_week: number;
@@ -302,6 +334,7 @@ export function createUsageCarbonDetails(
     diet_annual_co2_kg: breakdown.details.dietAnnualKg,
     car_pattern: inputs.carPattern,
     public_transit_pattern: inputs.publicTransitPattern,
+    public_transit_distance: inputs.publicTransitDistance,
     flight_pattern: inputs.flightPattern,
     flight_trips_per_year: inputs.flightTripsPerYear,
     beef_meals_per_week: inputs.beefMealsPerWeek,
@@ -318,6 +351,7 @@ export function restoreCarbonCategoryInputsFromUsage(
   if (
     !hasValue(record.car_pattern) &&
     !hasValue(record.public_transit_pattern) &&
+    !hasValue(record.public_transit_distance) &&
     !hasValue(record.flight_pattern) &&
     !hasValue(record.flight_trips_per_year) &&
     !hasValue(record.beef_meals_per_week) &&
@@ -346,6 +380,12 @@ export function restoreCarbonCategoryInputsFromUsage(
     )
       ? record.public_transit_pattern
       : DEFAULT_CARBON_CATEGORY_INPUTS.publicTransitPattern,
+    publicTransitDistance: isOptionValue(
+      PUBLIC_TRANSIT_DISTANCE_OPTIONS,
+      record.public_transit_distance,
+    )
+      ? record.public_transit_distance
+      : DEFAULT_CARBON_CATEGORY_INPUTS.publicTransitDistance,
     flightPattern,
     flightTripsPerYear: hasValue(record.flight_trips_per_year)
       ? numberOrDefault(record.flight_trips_per_year)
