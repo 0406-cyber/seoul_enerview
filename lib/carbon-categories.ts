@@ -1,27 +1,27 @@
 export const CAR_PATTERN_OPTIONS = [
   {
     value: "none",
-    label: "차량 이용 거의 없음",
-    description: "도보·자전거·대중교통 중심",
-    weeklyKm: 0,
+    label: "거의 안탐/재택",
+    description: "엑셀 대표값 기준 주 30km 이동",
+    weeklyKm: 30,
   },
   {
     value: "local",
-    label: "동네 생활권",
-    description: "장보기·학원·근거리 이동 중심",
-    weeklyKm: 35,
+    label: "동네 위주",
+    description: "엑셀 대표값 기준 주 80km 이동",
+    weeklyKm: 80,
   },
   {
     value: "commuteShort",
     label: "출퇴근 30분 이내",
-    description: "평일 왕복 근거리 통근 기준",
-    weeklyKm: 120,
+    description: "엑셀 대표값 기준 주 185km 이동",
+    weeklyKm: 185,
   },
   {
     value: "longDistance",
     label: "장거리 이동 잦음",
-    description: "주말 외곽 이동·출장 포함",
-    weeklyKm: 260,
+    description: "엑셀 대표값 기준 주 400km 이동",
+    weeklyKm: 400,
   },
 ] as const;
 
@@ -36,18 +36,18 @@ export const PUBLIC_TRANSIT_PATTERN_OPTIONS = [
   },
   {
     value: "metroBus",
-    label: "지하철·버스 중심",
-    description: "주 10회 기준, 이동 거리는 아래에서 선택",
+    label: "대중교통 중심",
+    description: "주 10회 기준, 이동 거리에 따라 지하철·버스 계수를 적용",
     weeklyTrips: 10,
-    averageKmPerTrip: 8,
-    kgPerKm: 0.045,
+    averageKmPerTrip: 12,
+    kgPerKm: 0.041,
   },
   {
     value: "carCommute",
     label: "자가용 중심",
     description: "주 10회 기준, 이동 거리는 아래에서 선택",
     weeklyTrips: 10,
-    averageKmPerTrip: 8,
+    averageKmPerTrip: 12,
     kgPerKm: 0.192,
   },
 ] as const;
@@ -55,21 +55,24 @@ export const PUBLIC_TRANSIT_PATTERN_OPTIONS = [
 export const PUBLIC_TRANSIT_DISTANCE_OPTIONS = [
   {
     value: "near",
-    label: "가까운 거리",
-    description: "2~3정거장 수준, 1회 평균 3km 가정",
-    averageKmPerTrip: 3,
+    label: "단거리",
+    description: "엑셀 대표값 기준 편도 5km, 지하철 0.041kg CO₂/km 적용",
+    averageKmPerTrip: 5,
+    kgPerKm: 0.041,
   },
   {
     value: "medium",
-    label: "중간 거리",
-    description: "도시 내 이동 수준, 1회 평균 8km 가정",
-    averageKmPerTrip: 8,
+    label: "중거리",
+    description: "엑셀 대표값 기준 편도 12km, 버스 0.089kg CO₂/km 적용",
+    averageKmPerTrip: 12,
+    kgPerKm: 0.089,
   },
   {
     value: "long",
-    label: "장거리(수도권 광역)",
-    description: "광역 통근·외곽 이동 수준, 1회 평균 25km 가정",
+    label: "장거리",
+    description: "엑셀 대표값 기준 편도 25km, 버스 국내 평균 계수 준용",
     averageKmPerTrip: 25,
+    kgPerKm: 0.089,
   },
 ] as const;
 
@@ -79,36 +82,48 @@ export const FLIGHT_PATTERN_OPTIONS = [
     label: "비행기 이용 없음",
     description: "최근 1년 기준",
     annualKm: 0,
+    oneWayKm: 0,
+    oneWayKg: 0,
   },
   {
     value: "domestic",
     label: "국내선",
-    description: "서울-제주 왕복 1회 수준",
-    annualKm: 900,
+    description: "김포-제주 편도 453km, 왕복 906km 기준",
+    annualKm: 906,
+    oneWayKm: 453,
+    oneWayKg: 52.095,
   },
   {
     value: "shortInternational",
     label: "단거리 국제선",
-    description: "일본·중국 왕복 1회 수준",
-    annualKm: 2_400,
+    description: "일본·중국 편도 평균 1,100km, 왕복 2,200km 기준",
+    annualKm: 2_200,
+    oneWayKm: 1_100,
+    oneWayKg: 126.5,
   },
   {
     value: "midInternational",
     label: "중거리 국제선",
-    description: "동남아시아 왕복 1회 수준",
-    annualKm: 7_200,
+    description: "동남아 편도 평균 4,500km, 왕복 9,000km 기준",
+    annualKm: 9_000,
+    oneWayKm: 4_500,
+    oneWayKg: 517.5,
   },
   {
     value: "europeAfrica",
-    label: "유럽·아프리카",
-    description: "장거리 왕복 1회 수준",
-    annualKm: 18_000,
+    label: "유럽·중동·아프리카",
+    description: "편도 평균 8,500km, 왕복 17,000km 기준",
+    annualKm: 17_000,
+    oneWayKm: 8_500,
+    oneWayKg: 977.5,
   },
   {
     value: "americas",
-    label: "미주",
-    description: "장거리 왕복 1회 수준",
-    annualKm: 21_000,
+    label: "미주·오세아니아",
+    description: "편도 평균 9,300km, 왕복 18,600km 기준",
+    annualKm: 18_600,
+    oneWayKm: 9_300,
+    oneWayKg: 1_069.5,
   },
 ] as const;
 
@@ -192,17 +207,22 @@ export const DEFAULT_CARBON_CATEGORY_INPUTS: CarbonCategoryInputValues = {
   plantMealsPerWeek: 0,
 };
 
-// TODO: 대표값 확정 시 아래 계수만 교체하면 UI/저장 흐름은 그대로 유지됩니다.
+// 탄소배출계수.xlsx 기준.
+// 엑셀의 이동거리 대표값은 음수로 입력되어 있지만, 배출량 산정에는 이동거리의 절댓값을 사용합니다.
 // 단위: kgCO2e
 export const EMISSION_FACTORS = {
   passengerCarKgPerKm: 0.192,
-  flightKgPerPassengerKm: 0.15,
+  publicTransitKgPerKm: {
+    subway: 0.041,
+    bus: 0.089,
+  },
+  flightKgPerPassengerKm: 0.115,
   mealKg: {
-    beef: 9.5,
-    pork: 1.6,
-    chicken: 1.4,
-    seafood: 1.3,
-    plant: 0.5,
+    beef: 100,
+    pork: 12,
+    chicken: 7,
+    seafood: 5,
+    plant: 1,
   },
 } as const;
 
@@ -236,13 +256,17 @@ export function calculateCarbonBreakdown(
     flight.value === "none" ? 0 : toSafeNumber(inputs.flightTripsPerYear);
 
   const carAnnualKg = car.weeklyKm * 52 * EMISSION_FACTORS.passengerCarKgPerKm;
+  const publicTransitKgPerKm =
+    publicTransit.value === "carCommute"
+      ? EMISSION_FACTORS.passengerCarKgPerKm
+      : publicTransitDistance.kgPerKm;
   const publicTransitAnnualKg =
     publicTransit.value === "walkBike"
       ? 0
       : publicTransit.weeklyTrips *
         publicTransitDistance.averageKmPerTrip *
         52 *
-        publicTransit.kgPerKm;
+        publicTransitKgPerKm;
   const flightAnnualKg =
     flight.annualKm *
     flightTripsPerYear *

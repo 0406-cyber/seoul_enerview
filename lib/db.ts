@@ -45,6 +45,12 @@ const round2 = (value: number | null | undefined): number => {
   return Number.isFinite(parsed) ? parseFloat(parsed.toFixed(2)) : 0;
 };
 
+const clampLimit = (limit: number, max = 100): number => {
+  const n = Math.trunc(Number(limit));
+  if (!Number.isFinite(n) || n <= 0) return Math.min(30, max);
+  return Math.min(n, max);
+};
+
 const textOrEmpty = (value: string | null | undefined): string => value ?? "";
 
 type DeviceClientHints = {
@@ -329,30 +335,52 @@ export async function saveUsage(
 }
 
 /** 2. 로그인 및 횟수 업데이트 (users 테이블) */
-export async function loginUser(username: string): Promise<void> {
+export async function loginUser(
+  username: string,
+): Promise<{ username: string; points: number; isNew: boolean }> {
   const db = getDb();
   if (!db) throw new Error("D1 데이터베이스가 바인딩되지 않았습니다.");
 
   const existingUser = await db
-    .prepare("SELECT username, login_count FROM users WHERE username = ?")
+    .prepare("SELECT username, login_count, points FROM users WHERE username = ? LIMIT 1")
     .bind(username)
-    .first<{ username: string; login_count: number }>();
+    .first<{ username: string; login_count: number; points: number }>();
 
   if (existingUser) {
     await db
-      .prepare(
-        "UPDATE users SET login_count = login_count + 1 WHERE username = ?",
-      )
+      .prepare("UPDATE users SET login_count = login_count + 1 WHERE username = ?")
       .bind(username)
       .run();
-  } else {
-    await db
-      .prepare(
-        "INSERT INTO users (username, login_count, points) VALUES (?, 1, 100)",
-      )
-      .bind(username)
-      .run();
+
+    return {
+      username,
+      points: Number(existingUser.points) || 0,
+      isNew: false,
+    };
   }
+
+  await db
+    .prepare("INSERT INTO users (username, login_count, points) VALUES (?, 1, 100)")
+    .bind(username)
+    .run();
+
+  return {
+    username,
+    points: 100,
+    isNew: true,
+  };
+}
+
+export async function checkUserExists(username: string): Promise<boolean> {
+  const db = getDb();
+  if (!db) return false;
+
+  const row = await db
+    .prepare("SELECT 1 FROM users WHERE username = ? LIMIT 1")
+    .bind(username)
+    .first();
+
+  return Boolean(row);
 }
 
 /** 3. 포인트 업데이트 (users 테이블) */
@@ -370,22 +398,25 @@ export async function updateUserPoints(
 }
 
 /** 4. 리더보드 가져오기 (users 테이블) */
-export async function getLeaderboardViaApi(): Promise<any[]> {
+export async function getLeaderboardViaApi(limit = 50): Promise<any[]> {
   const db = getDb();
   if (!db) return [];
 
+  const safeLimit = clampLimit(limit, 100);
+
   const { results } = await db
     .prepare(
-      "SELECT username, login_count, points FROM users ORDER BY points DESC",
+      "SELECT username, login_count, points FROM users ORDER BY points DESC LIMIT ?",
     )
+    .bind(safeLimit)
     .all();
 
   return results.map((row: any, index: number) => ({
     id: `user-${index}`,
     name: row.username,
     loginCount: row.login_count,
-    points: row.points,
-    carbonSaved: Math.floor(row.points / 50),
+    points: Number(row.points) || 0,
+    carbonSaved: Math.floor((Number(row.points) || 0) / 50),
     streak: 1,
   }));
 }
@@ -416,25 +447,25 @@ export async function savePointLog(
 }
 
 /** 6. 포인트 상세 내역 불러오기 (logs 테이블) */
-export async function getPointLogs(username: string): Promise<any[]> {
+export async function getPointLogs(username: string, limit = 30): Promise<any[]> {
   const db = getDb();
   if (!db) return [];
 
+  const safeLimit = clampLimit(limit, 100);
+
   const { results } = await db
     .prepare(
-      "SELECT date, description, amount FROM logs WHERE username = ? ORDER BY id ASC",
+      "SELECT id, date, description, amount FROM logs WHERE username = ? ORDER BY id DESC LIMIT ?",
     )
-    .bind(username)
+    .bind(username, safeLimit)
     .all();
 
-  return results
-    .map((row: any, index: number) => ({
-      id: `log-${index}`,
-      date: row.date,
-      description: row.description,
-      amount: row.amount,
-    }))
-    .reverse();
+  return results.map((row: any) => ({
+    id: `log-${row.id}`,
+    date: row.date,
+    description: row.description,
+    amount: row.amount,
+  }));
 }
 
 /** 7. 전체 포인트 로그 리스트 조회 (logs 테이블) */
@@ -649,9 +680,11 @@ export async function getSystemLogs(): Promise<any[]> {
 }
 
 /** 18. 사용자의 가스/전기/교통/식단 이력 조회 (usage 테이블) */
-export async function getUsageHistory(username: string): Promise<UsageRow[]> {
+export async function getUsageHistory(username: string, limit = 30): Promise<UsageRow[]> {
   const db = getDb();
   if (!db) return [];
+
+  const safeLimit = clampLimit(limit, 100);
 
   const mapUsageRow = (
     row: any,
@@ -698,17 +731,20 @@ export async function getUsageHistory(username: string): Promise<UsageRow[]> {
         beef_meals_per_week, pork_meals_per_week, chicken_meals_per_week, seafood_meals_per_week, plant_meals_per_week
        FROM usage
        WHERE username = ?
-       ORDER BY id ASC`,
+       ORDER BY id DESC
+       LIMIT ?`,
       )
-      .bind(username)
+      .bind(username, safeLimit)
       .all();
 
-    return results.map((row: any) =>
-      mapUsageRow(row, {
-        includeFlightTrips: true,
-        includePublicTransitDistance: true,
-      }),
-    );
+    return results
+      .map((row: any) =>
+        mapUsageRow(row, {
+          includeFlightTrips: true,
+          includePublicTransitDistance: true,
+        }),
+      )
+      .reverse();
   } catch (e) {
     if (!isMissingColumnError(e)) throw e;
   }
@@ -724,17 +760,20 @@ export async function getUsageHistory(username: string): Promise<UsageRow[]> {
         beef_meals_per_week, pork_meals_per_week, chicken_meals_per_week, seafood_meals_per_week, plant_meals_per_week
        FROM usage
        WHERE username = ?
-       ORDER BY id ASC`,
+       ORDER BY id DESC
+       LIMIT ?`,
       )
-      .bind(username)
+      .bind(username, safeLimit)
       .all();
 
-    return results.map((row: any) =>
-      mapUsageRow(row, {
-        includeFlightTrips: true,
-        includePublicTransitDistance: false,
-      }),
-    );
+    return results
+      .map((row: any) =>
+        mapUsageRow(row, {
+          includeFlightTrips: true,
+          includePublicTransitDistance: false,
+        }),
+      )
+      .reverse();
   } catch (e) {
     if (!isMissingColumnError(e)) throw e;
   }
@@ -750,34 +789,39 @@ export async function getUsageHistory(username: string): Promise<UsageRow[]> {
         beef_meals_per_week, pork_meals_per_week, chicken_meals_per_week, seafood_meals_per_week, plant_meals_per_week
        FROM usage
        WHERE username = ?
-       ORDER BY id ASC`,
+       ORDER BY id DESC
+       LIMIT ?`,
       )
-      .bind(username)
+      .bind(username, safeLimit)
       .all();
 
-    return results.map((row: any) =>
-      mapUsageRow(row, {
-        includeFlightTrips: false,
-        includePublicTransitDistance: false,
-      }),
-    );
+    return results
+      .map((row: any) =>
+        mapUsageRow(row, {
+          includeFlightTrips: false,
+          includePublicTransitDistance: false,
+        }),
+      )
+      .reverse();
   } catch (e) {
     if (!isMissingColumnError(e)) throw e;
   }
 
   const { results } = await db
     .prepare(
-      "SELECT date, elec_kwh, gas_m3, co2_kg FROM usage WHERE username = ? ORDER BY id ASC",
+      "SELECT date, elec_kwh, gas_m3, co2_kg FROM usage WHERE username = ? ORDER BY id DESC LIMIT ?",
     )
-    .bind(username)
+    .bind(username, safeLimit)
     .all();
 
-  return results.map((row: any) => ({
-    date: row.date,
-    elec_kwh: Number(row.elec_kwh) || 0,
-    gas_m3: Number(row.gas_m3) || 0,
-    co2_kg: Number(row.co2_kg) || 0,
-  }));
+  return results
+    .map((row: any) => ({
+      date: row.date,
+      elec_kwh: Number(row.elec_kwh) || 0,
+      gas_m3: Number(row.gas_m3) || 0,
+      co2_kg: Number(row.co2_kg) || 0,
+    }))
+    .reverse();
 }
 
 /** 19. 친환경 인증 타임라인 라인업 추가 (certifications 테이블) */
@@ -800,25 +844,25 @@ export async function saveCertification(
 }
 
 /** 20. 친환경 인증 타임라인 컴포넌트 로드 (certifications 테이블) */
-export async function getCertifications(username: string): Promise<any[]> {
+export async function getCertifications(username: string, limit = 20): Promise<any[]> {
   const db = getDb();
   if (!db) return [];
 
+  const safeLimit = clampLimit(limit, 100);
+
   const { results } = await db
     .prepare(
-      "SELECT id, date, type, points FROM certifications WHERE username = ? ORDER BY date ASC",
+      "SELECT id, date, type, points FROM certifications WHERE username = ? ORDER BY id DESC LIMIT ?",
     )
-    .bind(username)
+    .bind(username, safeLimit)
     .all();
 
-  return results
-    .map((row: any) => ({
-      id: row.id,
-      date: row.date,
-      type: row.type,
-      points: row.points,
-    }))
-    .reverse();
+  return results.map((row: any) => ({
+    id: row.id,
+    date: row.date,
+    type: row.type,
+    points: row.points,
+  }));
 }
 
 /**코칭 챗 단건 컨텍스트 기록 (coaching_chats 테이블) */
@@ -844,22 +888,26 @@ export async function saveChatMessage(
 }
 
 /** 22. 코칭 챗 히스토리 복원 로드 (coaching_chats 테이블) */
-export async function getChatMessages(username: string): Promise<any[]> {
+export async function getChatMessages(username: string, limit = 30): Promise<any[]> {
   const db = getDb();
   if (!db) return [];
 
+  const safeLimit = clampLimit(limit, 100);
+
   const { results } = await db
     .prepare(
-      "SELECT id, role, content FROM coaching_chats WHERE username = ? ORDER BY createdAt ASC",
+      "SELECT id, role, content FROM coaching_chats WHERE username = ? ORDER BY id DESC LIMIT ?",
     )
-    .bind(username)
+    .bind(username, safeLimit)
     .all();
 
-  return results.map((row: any) => ({
-    id: row.id,
-    role: row.role,
-    content: row.content,
-  }));
+  return results
+    .map((row: any) => ({
+      id: row.id,
+      role: row.role,
+      content: row.content,
+    }))
+    .reverse();
 }
 
 function assertAdminPassword(adminPassword?: string): void {

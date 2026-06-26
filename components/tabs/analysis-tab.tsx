@@ -224,7 +224,7 @@ function MealInput({
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-bold text-muted-foreground">{label}</span>
         <span className="text-[10px] text-muted-foreground/70">
-          {factor}kg/회
+          {factor}kgCO₂e/kg
         </span>
       </div>
       <div className="relative">
@@ -232,14 +232,14 @@ function MealInput({
           type="number"
           min={0}
           max={21}
-          step={1}
+          step={0.1}
           value={value || ""}
           onChange={(e) => onChange(sanitizeMealInput(e.target.value))}
           placeholder="0"
-          className="w-full bg-black/5 dark:bg-white/5 rounded-2xl px-4 py-3 pr-12 text-base font-black text-foreground placeholder:text-muted-foreground/50 border border-black/10 dark:border-white/5 focus:border-primary/50 focus:bg-black/10 dark:focus:bg-white/10 outline-none transition-all"
+          className="w-full bg-black/5 dark:bg-white/5 rounded-2xl px-4 py-3 pr-16 text-base font-black text-foreground placeholder:text-muted-foreground/50 border border-black/10 dark:border-white/5 focus:border-primary/50 focus:bg-black/10 dark:focus:bg-white/10 outline-none transition-all"
         />
         <span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-bold">
-          회
+          kg/주
         </span>
       </div>
     </label>
@@ -539,11 +539,11 @@ export function AnalysisTab({
           <CategoryCard
             icon={<Car className="w-5 h-5 text-primary" />}
             title="교통"
-            subtitle="정확한 km 대신 이동 패턴을 선택하면 대표 km로 월간 배출량을 계산합니다."
+            subtitle="탄소배출계수.xlsx의 대표 이동거리와 배출계수로 월간 배출량을 계산합니다."
           >
             <div className="space-y-4">
               <SelectBlock
-                label="주행 km 패턴"
+                label="차량 주간 km 패턴"
                 value={carbonCategoryInputs.carPattern}
                 options={CAR_PATTERN_OPTIONS}
                 onChange={(value) =>
@@ -612,7 +612,7 @@ export function AnalysisTab({
           <CategoryCard
             icon={<Utensils className="w-5 h-5 text-primary" />}
             title="식단"
-            subtitle="1주일 기준 섭취 횟수를 입력합니다. 육류·해산물·채식 식단을 월간 배출량으로 환산합니다."
+            subtitle="1주일 기준 섭취량(kg)을 입력합니다. 엑셀의 kgCO₂e/kg 계수로 월간 배출량을 환산합니다."
           >
             <div className="grid grid-cols-2 gap-3">
               <MealInput
@@ -829,22 +829,24 @@ export function AnalysisTab({
         </p>
         <ul className="list-disc list-inside space-y-1 ml-1">
           <li>
-            교통·식단 대표값은 임시값입니다. 통계청 등 확정 대표값을 받으면{" "}
-            <code>carbon-categories.ts</code>의 매핑값만 교체하면 됩니다.
+            교통·식단 대표값은 업로드된 <code>탄소배출계수.xlsx</code> 기준입니다.
           </li>
           <li>
-            주행 패턴은 주간 km를 연간화한 뒤 월 기준으로 나눠 반영합니다.
+            차량 주행 패턴은 엑셀 대표값 30km, 80km, 185km, 400km/주를 연간화한 뒤 월 기준으로 나눠 반영합니다.
           </li>
           <li>
             주간 이동수단이 도보·자전거 중심이 아닌 경우 이동 거리 대표값은
-            가까운 거리 3km, 중간 거리 8km, 장거리 25km/회로 반영합니다.
+            단거리 5km, 중거리 12km, 장거리 25km/편도로 반영합니다.
           </li>
           <li>
-            비행기는 최근 1년 왕복 거리 패턴과 연간 횟수를 곱한 뒤 월 기준으로
+            비행기는 엑셀의 편도 거리 대표값을 왕복 거리로 환산한 뒤 연간 횟수를 곱하고 월 기준으로
             나눠 반영합니다.
           </li>
           <li>
-            식단은 1주일 섭취 횟수를 연간화한 뒤 월 기준으로 나눠 반영합니다.
+            식단은 1주일 섭취량(kg)을 엑셀의 kgCO₂e/kg 계수로 연간화한 뒤 월 기준으로 나눠 반영합니다.
+          </li>
+          <li>
+            엑셀의 이동거리 대표값은 음수로 입력되어 있으나, 배출량 계산에는 이동거리의 절댓값을 사용했습니다.
           </li>
           <li>
             전기요금 역산 기준: 한국전력 주택용 고압, 기타계절 기준의 참고용

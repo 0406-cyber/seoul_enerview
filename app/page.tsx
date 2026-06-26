@@ -21,6 +21,7 @@ import {
   computeCo2Kg,
   saveUsage,
   loginUser,
+  checkUserExists,
   updateUserPoints,
   getLeaderboardViaApi,
   savePointLog,
@@ -259,12 +260,12 @@ const buildDetailedAdvicePrompt = ({
 - 선택 비행거리 가정: ${flight.annualKm}km/회
 - 비행 연간 배출량: ${kg(breakdown.details.flightAnnualKg, 2)}
 
-[식단 상세: 주간 횟수와 월간 배출량 추정]
-- 소고기: ${inputs.beefMealsPerWeek}회/주 → ${kg(beefMonthlyKg, 2)}/월
-- 돼지고기: ${inputs.porkMealsPerWeek}회/주 → ${kg(porkMonthlyKg, 2)}/월
-- 닭고기: ${inputs.chickenMealsPerWeek}회/주 → ${kg(chickenMonthlyKg, 2)}/월
-- 해산물: ${inputs.seafoodMealsPerWeek}회/주 → ${kg(seafoodMonthlyKg, 2)}/월
-- 채식/저탄소 식사: ${inputs.plantMealsPerWeek}회/주 → ${kg(plantMonthlyKg, 2)}/월
+[식단 상세: 주간 섭취량 kg와 월간 배출량 추정]
+- 소고기: ${inputs.beefMealsPerWeek}kg/주 → ${kg(beefMonthlyKg, 2)}/월
+- 돼지고기: ${inputs.porkMealsPerWeek}kg/주 → ${kg(porkMonthlyKg, 2)}/월
+- 닭고기: ${inputs.chickenMealsPerWeek}kg/주 → ${kg(chickenMonthlyKg, 2)}/월
+- 해산물: ${inputs.seafoodMealsPerWeek}kg/주 → ${kg(seafoodMonthlyKg, 2)}/월
+- 채식/두부: ${inputs.plantMealsPerWeek}kg/주 → ${kg(plantMonthlyKg, 2)}/월
 - 식단 전체 연간 배출량: ${kg(breakdown.details.dietAnnualKg, 2)}
 
 [최근 기록 추세]
@@ -330,6 +331,11 @@ function MainContent() {
 
   const [pointHistory, setPointHistory] = useState<PointHistoryItem[]>([])
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false)
+  const [hasLoadedUsage, setHasLoadedUsage] = useState(false)
+  const [hasLoadedChats, setHasLoadedChats] = useState(false)
+  const [hasLoadedCertifications, setHasLoadedCertifications] = useState(false)
+  const [hasLoadedLeaderboard, setHasLoadedLeaderboard] = useState(false)
+  const [hasLoadedPointLogs, setHasLoadedPointLogs] = useState(false)
 
   const [sysLogs, setSysLogs] = useState<any[]>([])
   const [isAdminLogsLoading, setIsAdminLogsLoading] = useState(false)
@@ -366,90 +372,134 @@ function MainContent() {
     }
   }, []);
 
+  const loadUsageFromServer = useCallback(async () => {
+    if (!nickname) return [];
+
+    const serverHistory = await getUsageHistory(nickname, 30);
+
+    if (serverHistory && serverHistory.length > 0) {
+      setUsageHistory(serverHistory);
+      const last = serverHistory[serverHistory.length - 1];
+      setCarbonEmission(last.co2_kg);
+      setElectricityUsage(String(last.elec_kwh));
+      setGasUsage(String(last.gas_m3));
+
+      const restoredInputs = restoreCarbonCategoryInputsFromUsage(last);
+      if (restoredInputs) {
+        setCarbonCategoryInputs(restoredInputs);
+      }
+
+      const restoredBreakdown = restoreCarbonBreakdownFromUsage(last);
+      if (restoredBreakdown) {
+        setCarbonBreakdown(restoredBreakdown);
+      }
+    } else {
+      const localHistory = loadUsageHistory(nickname);
+      setUsageHistory(localHistory);
+
+      const last = localHistory.at(-1);
+      if (last) {
+        const restoredInputs = restoreCarbonCategoryInputsFromUsage(last);
+        const restoredBreakdown = restoreCarbonBreakdownFromUsage(last);
+        if (restoredInputs) setCarbonCategoryInputs(restoredInputs);
+        if (restoredBreakdown) setCarbonBreakdown(restoredBreakdown);
+      }
+    }
+
+    setHasLoadedUsage(true);
+    return serverHistory;
+  }, [nickname]);
+
   useEffect(() => {
     if (!nickname || !mounted) return;
+    if (activeTab !== "analysis") return;
+    if (hasLoadedUsage) return;
 
-    const syncWithServer = async () => {
-      try {
-        const serverHistory = await getUsageHistory(nickname);
-        if (serverHistory && serverHistory.length > 0) {
-          setUsageHistory(serverHistory);
-          const last = serverHistory[serverHistory.length - 1];
-          setCarbonEmission(last.co2_kg);
-          setElectricityUsage(String(last.elec_kwh));
-          setGasUsage(String(last.gas_m3));
+    loadUsageFromServer().catch((e: any) => {
+      console.error("사용량 조회 실패:", e?.message || e);
+    });
+  }, [nickname, mounted, activeTab, hasLoadedUsage, loadUsageFromServer]);
 
-          const restoredInputs = restoreCarbonCategoryInputsFromUsage(last);
-          if (restoredInputs) {
-            setCarbonCategoryInputs(restoredInputs);
-          }
+  useEffect(() => {
+    if (!nickname || !mounted) return;
+    if (activeTab !== "coaching") return;
+    if (hasLoadedChats) return;
 
-          const restoredBreakdown = restoreCarbonBreakdownFromUsage(last);
-          if (restoredBreakdown) {
-            setCarbonBreakdown(restoredBreakdown);
-          }
-        } else {
-          const localHistory = loadUsageHistory(nickname);
-          setUsageHistory(localHistory);
-
-          const last = localHistory.at(-1);
-          if (last) {
-            const restoredInputs = restoreCarbonCategoryInputsFromUsage(last);
-            const restoredBreakdown = restoreCarbonBreakdownFromUsage(last);
-            if (restoredInputs) setCarbonCategoryInputs(restoredInputs);
-            if (restoredBreakdown) setCarbonBreakdown(restoredBreakdown);
-          }
+    getChatMessages(nickname, 30)
+      .then((chatHistory) => {
+        if (chatHistory && chatHistory.length > 0) {
+          setMessages(chatHistory);
         }
+        setHasLoadedChats(true);
+      })
+      .catch((e) => console.error("대화 내역 조회 실패:", e));
+  }, [nickname, mounted, activeTab, hasLoadedChats]);
 
-        const remoteData = await getLeaderboardViaApi();
+  useEffect(() => {
+    if (!nickname || !mounted) return;
+    if (activeTab !== "certification") return;
+    if (hasLoadedCertifications) return;
+
+    getCertifications(nickname, 20)
+      .then((serverCerts) => {
+        if (serverCerts && serverCerts.length > 0) {
+          setCertificationHistory(serverCerts);
+        }
+        setHasLoadedCertifications(true);
+      })
+      .catch((e) => console.error("인증 내역 조회 실패:", e));
+  }, [nickname, mounted, activeTab, hasLoadedCertifications]);
+
+  useEffect(() => {
+    if (!nickname || !mounted) return;
+    if (activeTab !== "leaderboard") return;
+    if (hasLoadedLeaderboard) return;
+
+    getLeaderboardViaApi(50)
+      .then((remoteData) => {
         setRemoteUsers(remoteData);
-        
+
         const myData = remoteData.find((u) => u.name === nickname);
         if (myData && myData.points >= 0) {
           setPoints(myData.points);
-          savePoints(nickname, myData.points); 
+          savePoints(nickname, myData.points);
         }
 
-        const serverLogs = await getPointLogs(nickname);
-        if (serverLogs && serverLogs.length > 0) {
-          setPointHistory(serverLogs);
-        }
+        setHasLoadedLeaderboard(true);
+      })
+      .catch((e) => console.error("리더보드 조회 실패:", e));
+  }, [nickname, mounted, activeTab, hasLoadedLeaderboard]);
 
-        try {
-          const serverCerts = await getCertifications(nickname);
-          if (serverCerts && serverCerts.length > 0) {
-            setCertificationHistory(serverCerts);
-          }
-        } catch (certError) {
-          console.error("인증 내역을 불러오는 데 실패했습니다:", certError);
-        }
+  useEffect(() => {
+    if (!nickname) return;
+    if (!isHistoryModalOpen) return;
+    if (hasLoadedPointLogs) return;
 
-        try {
-          const chatHistory = await getChatMessages(nickname);
-          if (chatHistory && chatHistory.length > 0) {
-            setMessages(chatHistory);
-          }
-        } catch (chatError) {
-          console.error("대화 내역을 불러오는 데 실패했습니다:", chatError);
+    getPointLogs(nickname, 30)
+      .then((logs) => {
+        if (logs && logs.length > 0) {
+          setPointHistory(logs);
         }
-
-      } catch (e: any) {
-        console.error("서버 데이터 동기화 에러:", e.message);
-      }
-    };
-    
-    syncWithServer();
-  }, [nickname, mounted]);
+        setHasLoadedPointLogs(true);
+      })
+      .catch((e) => console.error("포인트 로그 조회 실패:", e));
+  }, [nickname, isHistoryModalOpen, hasLoadedPointLogs]);
 
 
   useEffect(() => {
-    if (isOnboarded && nickname && nickname !== "admin") {
-      fetch("/api/syslog", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: `접속 (${nickname})` })
-      }).catch(() => {});
-    }
+    if (!isOnboarded || !nickname || nickname === "admin") return;
+
+    const logKey = `eco_syslog_${nickname}`;
+    if (sessionStorage.getItem(logKey)) return;
+    sessionStorage.setItem(logKey, "1");
+
+    fetch("/api/syslog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: `접속 (${nickname})` })
+    }).catch(() => {
+      sessionStorage.removeItem(logKey);
+    });
   }, [isOnboarded, nickname]);
 
   useEffect(() => {
@@ -594,21 +644,24 @@ function MainContent() {
     sessionStorage.setItem("eco_session", "active");
     setNickname(name);
     setIsOnboarded(true);
+    setHasLoadedUsage(false);
+    setHasLoadedChats(false);
+    setHasLoadedCertifications(false);
+    setHasLoadedLeaderboard(false);
+    setHasLoadedPointLogs(false);
   
     try {
-      const remoteData = await getLeaderboardViaApi();
-      const existingUser = remoteData.find(u => u.name === name);
-      
-      if (existingUser) {
-        setPoints(existingUser.points);
-        toast.success(`${name}님, 다시 오신 것을 환영합니다!`);
-      } else {
-        setPoints(100);
+      const user = await loginUser(name);
+
+      setPoints(user.points);
+      savePoints(name, user.points);
+
+      if (user.isNew) {
         recordPoint(name, "신규 가입 보너스", 100);
-        toast.success("가입을 축하합니다! .");
+        toast.success("가입을 축하합니다!");
+      } else {
+        toast.success(`${name}님, 다시 오신 것을 환영합니다!`);
       }
-      
-      await loginUser(name);
     } catch (e: any) {
       console.error("로그인 동기화 에러:", e.message);
       setPoints(loadPoints(name, 100)); 
@@ -617,8 +670,7 @@ function MainContent() {
 
   const checkIsExistingUser = useCallback(async (name: string) => {
     try {
-      const remoteData = await getLeaderboardViaApi();
-      return remoteData.some(u => u.name === name);
+      return await checkUserExists(name);
     } catch (e) {
       return false;
     }
@@ -681,6 +733,16 @@ function MainContent() {
     setAdminPassword("");
     setCarbonBreakdown(null);
     setCarbonCategoryInputs(DEFAULT_CARBON_CATEGORY_INPUTS);
+    setUsageHistory([]);
+    setMessages([]);
+    setCertificationHistory([]);
+    setPointHistory([]);
+    setRemoteUsers([]);
+    setHasLoadedUsage(false);
+    setHasLoadedChats(false);
+    setHasLoadedCertifications(false);
+    setHasLoadedLeaderboard(false);
+    setHasLoadedPointLogs(false);
     toast.success("로그아웃 되었습니다.");
   }, []);
 
@@ -819,7 +881,13 @@ function MainContent() {
   const handleRequestAdvice = useCallback(async () => {
       setIsCoachingLoading(true);
       try {
-        if (usageHistory.length === 0) {
+        let historyForAdvice = usageHistory;
+
+        if (historyForAdvice.length === 0 && nickname) {
+          historyForAdvice = await loadUsageFromServer();
+        }
+
+        if (historyForAdvice.length === 0) {
           setMessages((prev) => [
             ...prev,
             {
@@ -832,7 +900,7 @@ function MainContent() {
           return;
         }
 
-        const latest = usageHistory[usageHistory.length - 1] as DetailedUsageRecord;
+        const latest = historyForAdvice[historyForAdvice.length - 1] as DetailedUsageRecord;
         const latestInputs = restoreCarbonCategoryInputsFromUsage(latest) ?? carbonCategoryInputs;
         const latestBreakdown =
           carbonBreakdown ??
@@ -844,7 +912,7 @@ function MainContent() {
         const prompt = buildDetailedAdvicePrompt({
           nickname,
           latest,
-          history: usageHistory,
+          history: historyForAdvice,
           inputs: latestInputs,
           breakdown: latestBreakdown,
           points,
@@ -905,7 +973,7 @@ function MainContent() {
       } finally {
         setIsCoachingLoading(false);
       }
-    }, [usageHistory, nickname, carbonBreakdown, carbonCategoryInputs, points]);
+    }, [usageHistory, nickname, carbonBreakdown, carbonCategoryInputs, points, loadUsageFromServer]);
 
   const handleCertify = useCallback(async (): Promise<{
     ok: boolean
