@@ -41,13 +41,20 @@ import {
 import { loadUsageHistory, appendUsageLocal, type UsageRecord } from "@/lib/usage-storage"
 import { loadPoints, savePoints } from "@/lib/points-storage"
 import {
+  CAR_PATTERN_OPTIONS,
   DEFAULT_CARBON_CATEGORY_INPUTS,
+  EMISSION_FACTORS,
+  FLIGHT_COUNT_OPTIONS,
+  FLIGHT_PATTERN_OPTIONS,
+  PUBLIC_TRANSIT_DISTANCE_OPTIONS,
+  PUBLIC_TRANSIT_PATTERN_OPTIONS,
   calculateCarbonBreakdown,
   createUsageCarbonDetails,
   restoreCarbonBreakdownFromUsage,
   restoreCarbonCategoryInputsFromUsage,
   type CarbonBreakdown,
   type CarbonCategoryInputValues,
+  type UsageCarbonDetails,
 } from "@/lib/carbon-categories"
 import { AppShell } from "@/components/app/app-shell"
 import { AppContainer } from "@/components/app/app-container"
@@ -115,6 +122,161 @@ interface AdminUserDetail {
     requestedAt: string
     status: string
   }>
+}
+
+type DetailedUsageRecord = UsageRecord & Partial<UsageCarbonDetails>
+
+const kg = (value: number | null | undefined, digits = 1) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? `${parsed.toFixed(digits)}kg` : "0.0kg"
+}
+
+const kwh = (value: number | null | undefined) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? `${parsed.toFixed(1)}kWh` : "0.0kWh"
+}
+
+const cubicMeters = (value: number | null | undefined) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? `${parsed.toFixed(1)}m³` : "0.0m³"
+}
+
+const percentOf = (part: number, total: number) => {
+  if (!Number.isFinite(part) || !Number.isFinite(total) || total <= 0) return "0%"
+  return `${((part / total) * 100).toFixed(1)}%`
+}
+
+const optionText = <T extends string | number>(
+  options: readonly { value: T; label: string; description?: string }[],
+  value: T,
+) => {
+  const option = options.find((item) => String(item.value) === String(value))
+  return option
+    ? `${option.label}${option.description ? ` (${option.description})` : ""}`
+    : String(value)
+}
+
+const summarizeUsageTrend = (history: UsageRecord[]) => {
+  const recent = history.slice(-6)
+  if (recent.length === 0) return "기록 없음"
+
+  const latest = recent.at(-1)
+  const previous = recent.length >= 2 ? recent.at(-2) : null
+  const avg = recent.reduce((sum, item) => sum + (Number(item.co2_kg) || 0), 0) / recent.length
+  const min = recent.reduce((best, item) =>
+    (Number(item.co2_kg) || 0) < (Number(best.co2_kg) || 0) ? item : best,
+  recent[0])
+  const max = recent.reduce((best, item) =>
+    (Number(item.co2_kg) || 0) > (Number(best.co2_kg) || 0) ? item : best,
+  recent[0])
+
+  const delta = latest && previous ? (Number(latest.co2_kg) || 0) - (Number(previous.co2_kg) || 0) : 0
+  const direction =
+    !previous || Math.abs(delta) < 0.01
+      ? "변화 거의 없음"
+      : delta > 0
+        ? `직전 기록 대비 ${kg(delta)} 증가`
+        : `직전 기록 대비 ${kg(Math.abs(delta))} 감소`
+
+  return [
+    `최근 ${recent.length}개 기록 평균: ${kg(avg)}`,
+    `추세: ${direction}`,
+    `최저/최고: ${min.date} ${kg(min.co2_kg)} / ${max.date} ${kg(max.co2_kg)}`,
+    `최근 기록 목록: ${recent.map((item) => `${item.date}=${kg(item.co2_kg)}`).join(", ")}`,
+  ].join("\n")
+}
+
+const buildDetailedAdvicePrompt = ({
+  nickname,
+  latest,
+  history,
+  inputs,
+  breakdown,
+  points,
+}: {
+  nickname: string | null
+  latest: DetailedUsageRecord
+  history: UsageRecord[]
+  inputs: CarbonCategoryInputValues
+  breakdown: CarbonBreakdown
+  points: number
+}) => {
+  const totalMonthlyKg = Number(latest.co2_kg) || breakdown.totalMonthlyKg
+  const electricityMonthlyKg = (Number(latest.elec_kwh) || 0) * 0.4781
+  const gasMonthlyKg = (Number(latest.gas_m3) || 0) * 2.176
+  const car = CAR_PATTERN_OPTIONS.find((item) => item.value === inputs.carPattern) ?? CAR_PATTERN_OPTIONS[0]
+  const publicTransit =
+    PUBLIC_TRANSIT_PATTERN_OPTIONS.find((item) => item.value === inputs.publicTransitPattern) ??
+    PUBLIC_TRANSIT_PATTERN_OPTIONS[0]
+  const publicTransitDistance =
+    PUBLIC_TRANSIT_DISTANCE_OPTIONS.find((item) => item.value === inputs.publicTransitDistance) ??
+    PUBLIC_TRANSIT_DISTANCE_OPTIONS[0]
+  const flight = FLIGHT_PATTERN_OPTIONS.find((item) => item.value === inputs.flightPattern) ?? FLIGHT_PATTERN_OPTIONS[0]
+  const beefMonthlyKg =
+    (Number(inputs.beefMealsPerWeek) || 0) * EMISSION_FACTORS.mealKg.beef * 52 / 12
+  const porkMonthlyKg =
+    (Number(inputs.porkMealsPerWeek) || 0) * EMISSION_FACTORS.mealKg.pork * 52 / 12
+  const chickenMonthlyKg =
+    (Number(inputs.chickenMealsPerWeek) || 0) * EMISSION_FACTORS.mealKg.chicken * 52 / 12
+  const seafoodMonthlyKg =
+    (Number(inputs.seafoodMealsPerWeek) || 0) * EMISSION_FACTORS.mealKg.seafood * 52 / 12
+  const plantMonthlyKg =
+    (Number(inputs.plantMealsPerWeek) || 0) * EMISSION_FACTORS.mealKg.plant * 52 / 12
+
+  return `
+[역할]
+너는 에너뷰(Enerview)의 탄소 감축 코치다. 아래 사용자의 실제 입력값을 근거로 우선순위가 분명한 맞춤형 조언을 한국어로 작성해라.
+
+[사용자/기록]
+- 사용자: ${nickname ?? "미확인 사용자"}
+- 보유 포인트: ${points}P
+- 분석 기준일: ${latest.date}
+- 월간 총 탄소배출량: ${kg(totalMonthlyKg, 2)}
+- 연환산 탄소배출량: ${kg(breakdown.annualKg, 2)}
+
+[월간 카테고리별 배출량]
+- 주거: ${kg(breakdown.residentialMonthlyKg, 2)} (${percentOf(breakdown.residentialMonthlyKg, totalMonthlyKg)})
+- 교통: ${kg(breakdown.transportMonthlyKg, 2)} (${percentOf(breakdown.transportMonthlyKg, totalMonthlyKg)})
+- 식단: ${kg(breakdown.dietMonthlyKg, 2)} (${percentOf(breakdown.dietMonthlyKg, totalMonthlyKg)})
+
+[주거 상세]
+- 전기 사용량: ${kwh(latest.elec_kwh)} → 전기 배출량 추정 ${kg(electricityMonthlyKg, 2)}
+- 가스 사용량: ${cubicMeters(latest.gas_m3)} → 가스 배출량 추정 ${kg(gasMonthlyKg, 2)}
+- 전기 배출계수: 0.4781kgCO₂/kWh
+- 가스 배출계수: 2.176kgCO₂/m³
+
+[교통 상세]
+- 차량 이용 패턴: ${optionText(CAR_PATTERN_OPTIONS, inputs.carPattern)}
+- 차량 주간 이동거리 가정: ${car.weeklyKm}km/주
+- 차량 연간 배출량: ${kg(breakdown.details.carAnnualKg, 2)}
+- 주간 이동수단: ${optionText(PUBLIC_TRANSIT_PATTERN_OPTIONS, inputs.publicTransitPattern)}
+- 주간 이동 횟수 가정: ${publicTransit.weeklyTrips}회/주
+- 이동거리 선택: ${optionText(PUBLIC_TRANSIT_DISTANCE_OPTIONS, inputs.publicTransitDistance)}
+- 1회 평균 이동거리 가정: ${publicTransit.value === "walkBike" ? 0 : publicTransitDistance.averageKmPerTrip}km
+- 대중교통/자가용 중심 이동 연간 배출량: ${kg(breakdown.details.publicTransitAnnualKg, 2)}
+- 비행 패턴: ${optionText(FLIGHT_PATTERN_OPTIONS, inputs.flightPattern)}
+- 비행 횟수: ${optionText(FLIGHT_COUNT_OPTIONS, inputs.flightTripsPerYear)}
+- 선택 비행거리 가정: ${flight.annualKm}km/회
+- 비행 연간 배출량: ${kg(breakdown.details.flightAnnualKg, 2)}
+
+[식단 상세: 주간 횟수와 월간 배출량 추정]
+- 소고기: ${inputs.beefMealsPerWeek}회/주 → ${kg(beefMonthlyKg, 2)}/월
+- 돼지고기: ${inputs.porkMealsPerWeek}회/주 → ${kg(porkMonthlyKg, 2)}/월
+- 닭고기: ${inputs.chickenMealsPerWeek}회/주 → ${kg(chickenMonthlyKg, 2)}/월
+- 해산물: ${inputs.seafoodMealsPerWeek}회/주 → ${kg(seafoodMonthlyKg, 2)}/월
+- 채식/저탄소 식사: ${inputs.plantMealsPerWeek}회/주 → ${kg(plantMonthlyKg, 2)}/월
+- 식단 전체 연간 배출량: ${kg(breakdown.details.dietAnnualKg, 2)}
+
+[최근 기록 추세]
+${summarizeUsageTrend(history)}
+
+[답변 지시]
+1. 가장 큰 배출 카테고리부터 감축 우선순위를 1~3순위로 잡아라.
+2. 각 우선순위마다 사용자가 바로 할 수 있는 행동을 2개 이상 제시해라.
+3. 위 수치로 계산 가능한 경우 예상 감축량을 kg 단위로 대략 제시하되, 계산 근거가 부족하면 "추정"이라고 표시해라.
+4. 사용자가 입력하지 않은 정보는 단정하지 말고, 필요한 추가 질문을 마지막에 1개만 제시해라.
+5. 답변은 친절하지만 짧고 실행 중심으로 작성해라.
+`.trim()
 }
 
 function MainContent() {
@@ -670,11 +832,23 @@ function MainContent() {
           return;
         }
 
-        const latest = usageHistory[usageHistory.length - 1];
-        const categorySummary = carbonBreakdown
-          ? `교통 ${carbonBreakdown.transportMonthlyKg.toFixed(2)}kg, 식단 ${carbonBreakdown.dietMonthlyKg.toFixed(2)}kg, 주거 ${carbonBreakdown.residentialMonthlyKg.toFixed(2)}kg`
-          : "세부 카테고리 정보 없음";
-        const prompt = `사용자가 이번 달 기준으로 총 ${latest.co2_kg.toFixed(2)}kg의 탄소를 배출했어. 세부 정보는 ${categorySummary}이야. 전기 ${latest.elec_kwh}kWh, 가스 ${latest.gas_m3}m3도 입력되어 있어. 교통, 식단, 주거 중 감축 여지가 큰 항목을 우선순위로 잡아 실생활에서 실천할 수 있는 팁을 친절하게 한국어로 조언해줘.`;
+        const latest = usageHistory[usageHistory.length - 1] as DetailedUsageRecord;
+        const latestInputs = restoreCarbonCategoryInputsFromUsage(latest) ?? carbonCategoryInputs;
+        const latestBreakdown =
+          carbonBreakdown ??
+          restoreCarbonBreakdownFromUsage(latest) ??
+          calculateCarbonBreakdown(
+            (Number(latest.elec_kwh) || 0) * 0.4781 + (Number(latest.gas_m3) || 0) * 2.176,
+            latestInputs,
+          );
+        const prompt = buildDetailedAdvicePrompt({
+          nickname,
+          latest,
+          history: usageHistory,
+          inputs: latestInputs,
+          breakdown: latestBreakdown,
+          points,
+        });
 
         const userMessageId = Date.now().toString();
         if (nickname) {
@@ -731,7 +905,7 @@ function MainContent() {
       } finally {
         setIsCoachingLoading(false);
       }
-    }, [usageHistory, nickname, carbonBreakdown]);
+    }, [usageHistory, nickname, carbonBreakdown, carbonCategoryInputs, points]);
 
   const handleCertify = useCallback(async (): Promise<{
     ok: boolean

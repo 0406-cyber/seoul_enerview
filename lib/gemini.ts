@@ -165,7 +165,7 @@ export async function* streamChatWithMessage(
       functionDeclarations: [
         {
           name: "getUsageHistory",
-          description: "사용자의 과거 전기 사용량, 가스 사용량 및 탄소 배출량 이력을 데이터베이스에서 직접 조회합니다.",
+          description: "사용자의 과거 전기 사용량, 가스 사용량, 주거/교통/식단 탄소 배출량, 교통수단·비행·식단 세부 입력 이력을 데이터베이스에서 직접 조회합니다.",
           parameters: {
             type: "OBJECT",
             properties: {
@@ -194,7 +194,7 @@ export async function* streamChatWithMessage(
     history: history,
     config: {
       tools: enerviewTools, 
-      systemInstruction: "너는 친환경 에너지 가이드 에너뷰(Enerview) 코치야. 사용자가 과거 기록이나 포인트 조회를 요청하면 관련 함수를 알아서 호출해줘. 모든 답변은 따뜻한 한국어로 해줘."
+      systemInstruction: "너는 친환경 에너지 가이드 에너뷰(Enerview) 코치야. 사용량 기반 조언 요청에는 전달된 전기·가스·주거·교통·식단·최근 추세 수치를 우선 근거로 삼고, 배출 비중이 큰 항목부터 실행 가능한 감축 행동을 제안해줘. 사용자가 과거 기록이나 포인트 조회를 요청하면 관련 함수를 알아서 호출해줘. 모든 답변은 따뜻한 한국어로 해줘."
     }
   });
 
