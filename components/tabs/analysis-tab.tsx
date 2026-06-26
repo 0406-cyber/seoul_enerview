@@ -33,14 +33,17 @@ import {
 } from "recharts";
 import {
   calculateCarbonBreakdown,
-  CAR_PATTERN_OPTIONS,
   PUBLIC_TRANSIT_PATTERN_OPTIONS,
-  PUBLIC_TRANSIT_DISTANCE_OPTIONS,
   FLIGHT_PATTERN_OPTIONS,
   FLIGHT_COUNT_OPTIONS,
   EMISSION_FACTORS,
+  getDefaultTransportDetailForMode,
+  getDefaultTransportDistanceForMode,
+  getTransportDetailOptions,
+  getTransportDistanceOptions,
   type CarbonBreakdown,
   type CarbonCategoryInputValues,
+  type PublicTransitPattern,
 } from "@/lib/carbon-categories";
 
 interface AnalysisTabProps {
@@ -304,8 +307,24 @@ export function AnalysisTab({
     () => calculateCarbonBreakdown(0, carbonCategoryInputs),
     [carbonCategoryInputs],
   );
-  const shouldShowPublicTransitDistance =
+  const shouldShowTransportDetail =
     carbonCategoryInputs.publicTransitPattern !== "walkBike";
+  const transportDetailOptions = useMemo(
+    () => getTransportDetailOptions(carbonCategoryInputs.publicTransitPattern),
+    [carbonCategoryInputs.publicTransitPattern],
+  );
+  const transportDistanceOptions = useMemo(
+    () => getTransportDistanceOptions(carbonCategoryInputs.publicTransitPattern),
+    [carbonCategoryInputs.publicTransitPattern],
+  );
+  const transportDetailLabel =
+    carbonCategoryInputs.publicTransitPattern === "car"
+      ? "차량 종류"
+      : "대중교통 종류";
+  const transportDistanceLabel =
+    carbonCategoryInputs.publicTransitPattern === "car"
+      ? "주간 이동거리"
+      : "편도 이동거리";
 
   const visibleBreakdown = carbonBreakdown ?? lifestylePreview;
   const hasResidentialInput = Boolean(electricityUsage || gasUsage);
@@ -539,36 +558,41 @@ export function AnalysisTab({
           <CategoryCard
             icon={<Car className="w-5 h-5 text-primary" />}
             title="교통"
-            subtitle="탄소배출계수.xlsx의 대표 이동거리와 배출계수로 월간 배출량을 계산합니다."
+            subtitle="주간 이동수단을 먼저 선택한 뒤, 해당 수단에 맞는 종류와 이동거리로 계산합니다."
           >
             <div className="space-y-4">
-              <SelectBlock
-                label="차량 주간 km 패턴"
-                value={carbonCategoryInputs.carPattern}
-                options={CAR_PATTERN_OPTIONS}
-                onChange={(value) =>
-                  onCarbonCategoryInputChange("carPattern", value)
-                }
-              />
               <SelectBlock
                 label="주간 이동수단"
                 value={carbonCategoryInputs.publicTransitPattern}
                 options={PUBLIC_TRANSIT_PATTERN_OPTIONS}
                 onChange={(value) => {
-                  onCarbonCategoryInputChange("publicTransitPattern", value);
-                  if (value === "walkBike") {
-                    onCarbonCategoryInputChange(
-                      "publicTransitDistance",
-                      PUBLIC_TRANSIT_DISTANCE_OPTIONS[0].value,
-                    );
-                  }
+                  const nextMode = value as PublicTransitPattern;
+                  onCarbonCategoryInputChange("publicTransitPattern", nextMode);
+                  onCarbonCategoryInputChange(
+                    "carPattern",
+                    getDefaultTransportDetailForMode(nextMode),
+                  );
+                  onCarbonCategoryInputChange(
+                    "publicTransitDistance",
+                    getDefaultTransportDistanceForMode(nextMode),
+                  );
                 }}
               />
-              {shouldShowPublicTransitDistance && (
+              {shouldShowTransportDetail && transportDetailOptions.length > 0 && (
                 <SelectBlock
-                  label="이동 거리"
+                  label={transportDetailLabel}
+                  value={carbonCategoryInputs.carPattern}
+                  options={transportDetailOptions}
+                  onChange={(value) =>
+                    onCarbonCategoryInputChange("carPattern", value)
+                  }
+                />
+              )}
+              {shouldShowTransportDetail && transportDistanceOptions.length > 0 && (
+                <SelectBlock
+                  label={transportDistanceLabel}
                   value={carbonCategoryInputs.publicTransitDistance}
-                  options={PUBLIC_TRANSIT_DISTANCE_OPTIONS}
+                  options={transportDistanceOptions}
                   onChange={(value) =>
                     onCarbonCategoryInputChange("publicTransitDistance", value)
                   }
@@ -832,11 +856,10 @@ export function AnalysisTab({
             교통·식단 대표값은 업로드된 <code>탄소배출계수.xlsx</code> 기준입니다.
           </li>
           <li>
-            차량 주행 패턴은 엑셀 대표값 30km, 80km, 185km, 400km/주를 연간화한 뒤 월 기준으로 나눠 반영합니다.
+            차량 중심 선택 시 주간 이동거리 30km, 80km, 185km, 400km와 차량 종류별 계수를 함께 적용합니다.
           </li>
           <li>
-            주간 이동수단이 도보·자전거 중심이 아닌 경우 이동 거리 대표값은
-            단거리 5km, 중거리 12km, 장거리 25km/편도로 반영합니다.
+            대중교통 중심 선택 시 편도 5km, 12km, 25km와 지하철/버스 계수를 함께 적용합니다.
           </li>
           <li>
             비행기는 엑셀의 편도 거리 대표값을 왕복 거리로 환산한 뒤 연간 횟수를 곱하고 월 기준으로

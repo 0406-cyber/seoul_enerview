@@ -51,6 +51,9 @@ import {
   PUBLIC_TRANSIT_PATTERN_OPTIONS,
   calculateCarbonBreakdown,
   createUsageCarbonDetails,
+  getActiveTransportDetail,
+  getActiveTransportDistance,
+  normalizeTransportMode,
   restoreCarbonBreakdownFromUsage,
   restoreCarbonCategoryInputsFromUsage,
   type CarbonBreakdown,
@@ -205,13 +208,29 @@ const buildDetailedAdvicePrompt = ({
   const totalMonthlyKg = Number(latest.co2_kg) || breakdown.totalMonthlyKg
   const electricityMonthlyKg = (Number(latest.elec_kwh) || 0) * 0.4781
   const gasMonthlyKg = (Number(latest.gas_m3) || 0) * 2.176
-  const car = CAR_PATTERN_OPTIONS.find((item) => item.value === inputs.carPattern) ?? CAR_PATTERN_OPTIONS[0]
+  const transportMode = normalizeTransportMode(inputs.publicTransitPattern)
   const publicTransit =
-    PUBLIC_TRANSIT_PATTERN_OPTIONS.find((item) => item.value === inputs.publicTransitPattern) ??
+    PUBLIC_TRANSIT_PATTERN_OPTIONS.find((item) => item.value === transportMode) ??
     PUBLIC_TRANSIT_PATTERN_OPTIONS[0]
-  const publicTransitDistance =
-    PUBLIC_TRANSIT_DISTANCE_OPTIONS.find((item) => item.value === inputs.publicTransitDistance) ??
-    PUBLIC_TRANSIT_DISTANCE_OPTIONS[0]
+  const transportDetail = getActiveTransportDetail(transportMode, inputs.carPattern)
+  const publicTransitDistance = getActiveTransportDistance(
+    transportMode,
+    inputs.publicTransitDistance,
+  )
+  const transportDetailText =
+    transportMode === "walkBike" || !transportDetail
+      ? "해당 없음"
+      : optionText(CAR_PATTERN_OPTIONS, transportDetail.value)
+  const transportDistanceText =
+    transportMode === "walkBike" || !publicTransitDistance
+      ? "해당 없음"
+      : optionText(PUBLIC_TRANSIT_DISTANCE_OPTIONS, publicTransitDistance.value)
+  const transportDistanceAssumption =
+    !publicTransitDistance
+      ? "0km"
+      : "weeklyKm" in publicTransitDistance
+        ? `${publicTransitDistance.weeklyKm}km/주`
+        : `${publicTransitDistance.averageKmPerTrip}km/편도`
   const flight = FLIGHT_PATTERN_OPTIONS.find((item) => item.value === inputs.flightPattern) ?? FLIGHT_PATTERN_OPTIONS[0]
   const beefMonthlyKg =
     (Number(inputs.beefMealsPerWeek) || 0) * EMISSION_FACTORS.mealKg.beef * 52 / 12
@@ -247,25 +266,24 @@ const buildDetailedAdvicePrompt = ({
 - 가스 배출계수: 2.176kgCO₂/m³
 
 [교통 상세]
-- 차량 이용 패턴: ${optionText(CAR_PATTERN_OPTIONS, inputs.carPattern)}
-- 차량 주간 이동거리 가정: ${car.weeklyKm}km/주
+- 주간 이동수단: ${optionText(PUBLIC_TRANSIT_PATTERN_OPTIONS, transportMode)}
+- 이동수단 세부 선택: ${transportDetailText}
+- 이동거리 선택: ${transportDistanceText}
+- 이동거리 가정: ${transportMode === "walkBike" ? "0km" : transportDistanceAssumption}
+- 대중교통 주간 이동 횟수 가정: ${transportMode === "publicTransit" ? publicTransit.weeklyTrips : 0}회/주
 - 차량 연간 배출량: ${kg(breakdown.details.carAnnualKg, 2)}
-- 주간 이동수단: ${optionText(PUBLIC_TRANSIT_PATTERN_OPTIONS, inputs.publicTransitPattern)}
-- 주간 이동 횟수 가정: ${publicTransit.weeklyTrips}회/주
-- 이동거리 선택: ${optionText(PUBLIC_TRANSIT_DISTANCE_OPTIONS, inputs.publicTransitDistance)}
-- 1회 평균 이동거리 가정: ${publicTransit.value === "walkBike" ? 0 : publicTransitDistance.averageKmPerTrip}km
-- 대중교통/자가용 중심 이동 연간 배출량: ${kg(breakdown.details.publicTransitAnnualKg, 2)}
+- 대중교통 연간 배출량: ${kg(breakdown.details.publicTransitAnnualKg, 2)}
 - 비행 패턴: ${optionText(FLIGHT_PATTERN_OPTIONS, inputs.flightPattern)}
 - 비행 횟수: ${optionText(FLIGHT_COUNT_OPTIONS, inputs.flightTripsPerYear)}
 - 선택 비행거리 가정: ${flight.annualKm}km/회
 - 비행 연간 배출량: ${kg(breakdown.details.flightAnnualKg, 2)}
 
-[식단 상세: 주간 섭취량 kg와 월간 배출량 추정]
-- 소고기: ${inputs.beefMealsPerWeek}kg/주 → ${kg(beefMonthlyKg, 2)}/월
-- 돼지고기: ${inputs.porkMealsPerWeek}kg/주 → ${kg(porkMonthlyKg, 2)}/월
-- 닭고기: ${inputs.chickenMealsPerWeek}kg/주 → ${kg(chickenMonthlyKg, 2)}/월
-- 해산물: ${inputs.seafoodMealsPerWeek}kg/주 → ${kg(seafoodMonthlyKg, 2)}/월
-- 채식/두부: ${inputs.plantMealsPerWeek}kg/주 → ${kg(plantMonthlyKg, 2)}/월
+[식단 상세: 주간 횟수와 월간 배출량 추정]
+- 소고기: ${inputs.beefMealsPerWeek}회/주 → ${kg(beefMonthlyKg, 2)}/월
+- 돼지고기: ${inputs.porkMealsPerWeek}회/주 → ${kg(porkMonthlyKg, 2)}/월
+- 닭고기: ${inputs.chickenMealsPerWeek}회/주 → ${kg(chickenMonthlyKg, 2)}/월
+- 해산물: ${inputs.seafoodMealsPerWeek}회/주 → ${kg(seafoodMonthlyKg, 2)}/월
+- 채식/저탄소 식사: ${inputs.plantMealsPerWeek}회/주 → ${kg(plantMonthlyKg, 2)}/월
 - 식단 전체 연간 배출량: ${kg(breakdown.details.dietAnnualKg, 2)}
 
 [최근 기록 추세]
