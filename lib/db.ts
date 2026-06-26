@@ -47,6 +47,152 @@ const round2 = (value: number | null | undefined): number => {
 
 const textOrEmpty = (value: string | null | undefined): string => value ?? "";
 
+type DeviceClientHints = {
+  brands?: string | null;
+  mobile?: string | null;
+  platform?: string | null;
+};
+
+const cleanDevicePart = (value: string | null | undefined): string =>
+  String(value ?? "")
+    .replace(/^"|"$/g, "")
+    .replace(/_/g, ".")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const browserFromClientHints = (brands: string | null | undefined): string | null => {
+  if (!brands) return null;
+
+  const parsed = [...brands.matchAll(/"([^";]+)";v="([^";]+)"/g)]
+    .map((match) => ({ name: match[1], version: match[2] }))
+    .filter((brand) => !/not[ ._-]?a[ ._-]?brand/i.test(brand.name));
+
+  const preferred = [
+    "Microsoft Edge",
+    "Google Chrome",
+    "Brave",
+    "Opera",
+    "Samsung Internet",
+    "Naver Whale",
+    "Chromium",
+  ];
+
+  const selected =
+    preferred
+      .map((name) => parsed.find((brand) => brand.name.toLowerCase() === name.toLowerCase()))
+      .find(Boolean) ?? parsed[0];
+
+  return selected ? `${selected.name} ${selected.version}` : null;
+};
+
+const detectBrowser = (userAgent: string, hints?: DeviceClientHints): string => {
+  const chBrowser = browserFromClientHints(hints?.brands);
+
+  const checks: Array<[RegExp, string]> = [
+    [/SamsungBrowser\/([\d.]+)/i, "Samsung Internet"],
+    [/Whale\/([\d.]+)/i, "Naver Whale"],
+    [/(?:Edg|EdgA|EdgiOS)\/([\d.]+)/i, "Microsoft Edge"],
+    [/(?:OPR|Opera)\/([\d.]+)/i, "Opera"],
+    [/CriOS\/([\d.]+)/i, "Chrome iOS"],
+    [/FxiOS\/([\d.]+)/i, "Firefox iOS"],
+    [/Firefox\/([\d.]+)/i, "Firefox"],
+    [/(?:Chrome|Chromium)\/([\d.]+)/i, "Chrome"],
+    [/Version\/([\d.]+).*Safari\//i, "Safari"],
+    [/(?:MSIE |rv:)([\d.]+).*Trident/i, "Internet Explorer"],
+  ];
+
+  for (const [pattern, name] of checks) {
+    const match = userAgent.match(pattern);
+    if (match?.[1]) return `${name} ${match[1]}`;
+  }
+
+  return chBrowser ?? "Unknown Browser";
+};
+
+const detectOs = (userAgent: string, hints?: DeviceClientHints): string => {
+  const platformHint = cleanDevicePart(hints?.platform);
+
+  const windowsVersion = userAgent.match(/Windows NT ([\d.]+)/i)?.[1];
+  if (windowsVersion) {
+    const versions: Record<string, string> = {
+      "10.0": "Windows 10/11",
+      "6.3": "Windows 8.1",
+      "6.2": "Windows 8",
+      "6.1": "Windows 7",
+    };
+    return versions[windowsVersion] ?? `Windows NT ${windowsVersion}`;
+  }
+
+  const androidVersion = userAgent.match(/Android ([\d.]+)/i)?.[1];
+  if (androidVersion) return `Android ${androidVersion}`;
+
+  const ipadOsVersion = userAgent.match(/CPU OS ([\d_]+)/i)?.[1];
+  if (/iPad/i.test(userAgent) && ipadOsVersion) return `iPadOS ${cleanDevicePart(ipadOsVersion)}`;
+
+  const iosVersion =
+    userAgent.match(/iPhone OS ([\d_]+)/i)?.[1] ??
+    userAgent.match(/CPU(?: iPhone)? OS ([\d_]+)/i)?.[1];
+  if (iosVersion) return `iOS ${cleanDevicePart(iosVersion)}`;
+
+  const macVersion = userAgent.match(/Mac OS X ([\d_]+)/i)?.[1];
+  if (macVersion) return `macOS ${cleanDevicePart(macVersion)}`;
+
+  const chromeOsVersion = userAgent.match(/CrOS [^ ]+ ([\d.]+)/i)?.[1];
+  if (chromeOsVersion) return `ChromeOS ${chromeOsVersion}`;
+
+  if (/Linux/i.test(userAgent)) return "Linux";
+  if (platformHint) return platformHint;
+
+  return "Unknown OS";
+};
+
+const detectDeviceType = (userAgent: string, hints?: DeviceClientHints): string => {
+  if (/bot|crawler|spider|crawling|slurp|bingpreview/i.test(userAgent)) return "Bot";
+
+  if (hints?.mobile === "?1") return "Mobile";
+
+  if (/iPad|Tablet|Kindle|Silk|PlayBook|Nexus 7|Nexus 10|SM-T|Tab/i.test(userAgent)) {
+    return "Tablet";
+  }
+
+  if (/Mobile|Android.*Mobile|iPhone|iPod/i.test(userAgent)) return "Mobile";
+  if (/Android/i.test(userAgent)) return "Tablet";
+  if (hints?.mobile === "?0") return "Desktop";
+
+  return "Desktop";
+};
+
+const detectDeviceModel = (userAgent: string): string => {
+  if (/iPhone/i.test(userAgent)) return "iPhone";
+  if (/iPad/i.test(userAgent)) return "iPad";
+  if (/iPod/i.test(userAgent)) return "iPod";
+
+  const androidModel = userAgent.match(/Android [\d.]+;\s*([^;)]+?)(?:\s+Build\/|;|\))/i)?.[1];
+  if (androidModel) {
+    const model = cleanDevicePart(androidModel.replace(/\bwv\b/gi, ""));
+    if (model && !/^(mobile|tablet)$/i.test(model)) return model;
+  }
+
+  if (/Windows NT/i.test(userAgent)) return "Windows PC";
+  if (/Macintosh/i.test(userAgent)) return "Mac";
+  if (/CrOS/i.test(userAgent)) return "Chromebook";
+
+  return "";
+};
+
+const buildDeviceLabel = (userAgent: string, hints?: DeviceClientHints): string => {
+  if (!userAgent || userAgent === "Unknown Device") return "Unknown Device";
+
+  const type = detectDeviceType(userAgent, hints);
+  const model = detectDeviceModel(userAgent);
+  const os = detectOs(userAgent, hints);
+  const browser = detectBrowser(userAgent, hints);
+
+  return [type, model, os, browser]
+    .filter((part, index, parts) => part && !part.startsWith("Unknown") && parts.indexOf(part) === index)
+    .join(" · ") || type;
+};
+
 const isMissingColumnError = (error: unknown): boolean => {
   const message = String((error as any)?.message ?? error);
   return (
@@ -463,6 +609,7 @@ export async function saveSystemLog(
   ip: string,
   country: string,
   userAgent: string,
+  clientHints: DeviceClientHints = {},
 ): Promise<void> {
   const db = getDb();
   if (!db) return;
@@ -470,15 +617,13 @@ export async function saveSystemLog(
   const dateStr = new Date().toLocaleString("ko-KR", {
     timeZone: "Asia/Seoul",
   });
-  const isMobile = /Mobile|Android|iP(hone|od|ad)/i.test(userAgent)
-    ? "Mobile"
-    : "Desktop";
+  const device = buildDeviceLabel(userAgent, clientHints);
 
   await db
     .prepare(
       "INSERT INTO server_logs (date, action, ip, country, device) VALUES (?, ?, ?, ?, ?)",
     )
-    .bind(dateStr, action, ip, country, isMobile)
+    .bind(dateStr, action, ip, country, device)
     .run();
 }
 

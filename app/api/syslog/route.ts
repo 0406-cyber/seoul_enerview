@@ -10,11 +10,16 @@ export async function POST(req: Request) {
     const ip = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || 'Unknown IP';
     const country = req.headers.get('cf-ipcountry') || 'Unknown';
     const userAgent = req.headers.get('user-agent') || 'Unknown Device';
+    const clientHints = {
+      brands: req.headers.get('sec-ch-ua'),
+      mobile: req.headers.get('sec-ch-ua-mobile'),
+      platform: req.headers.get('sec-ch-ua-platform'),
+    };
     
     const body = await req.json();
     const action = body.action || '페이지 접속';
 
-    await saveSystemLog(action, ip, country, userAgent);
+    await saveSystemLog(action, ip, country, userAgent, clientHints);
 
     return NextResponse.json({ success: true });
   } catch (error) {
