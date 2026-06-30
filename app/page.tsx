@@ -310,6 +310,10 @@ function MainContent() {
     router.push(`?tab=${newTab}`, { scroll: false })
   }
 
+  const resetToAnalysisTab = useCallback(() => {
+    router.replace("/", { scroll: false })
+  }, [router])
+
   const [nickname, setNickname] = useState<string | null>(null)
   const [isOnboarded, setIsOnboarded] = useState<boolean>(false)
   const [points, setPoints] = useState<number>(100)
@@ -321,13 +325,16 @@ function MainContent() {
       const sessionFlag = sessionStorage.getItem("eco_session");
       if (!sessionFlag) {
         localStorage.removeItem("eco_nickname");
+        resetToAnalysisTab();
         return;
       }
       setNickname(savedName)
       setIsOnboarded(true)
       setPoints(loadPoints(savedName, 100))
+    } else {
+      resetToAnalysisTab();
     }
-  }, [])
+  }, [resetToAnalysisTab])
 
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false)
   const [adminPassword, setAdminPassword] = useState("")
@@ -658,6 +665,7 @@ function MainContent() {
   }, [adminPointTarget, adminPointAmount, adminPointReason, adminPassword]);
      
   const handleOnboardingComplete = useCallback(async (name: string) => {
+    resetToAnalysisTab();
     localStorage.setItem("eco_nickname", name);
     sessionStorage.setItem("eco_session", "active");
     setNickname(name);
@@ -684,7 +692,7 @@ function MainContent() {
       console.error("로그인 동기화 에러:", e.message);
       setPoints(loadPoints(name, 100)); 
     }
-  }, [recordPoint]);
+  }, [recordPoint, resetToAnalysisTab]);
 
   const checkIsExistingUser = useCallback(async (name: string) => {
     try {
@@ -734,15 +742,17 @@ function MainContent() {
   }, [adminPassword])
 
   const handleAdminLogout = useCallback(() => {
+    resetToAnalysisTab()
     setIsAdminAuthenticated(false)
     setNickname(null)
     setIsOnboarded(false)
     setAdminPassword("")
     localStorage.removeItem("eco_nickname")
     sessionStorage.removeItem("eco_session")
-  }, [])
+  }, [resetToAnalysisTab])
 
   const handleLogout = useCallback(() => {
+    resetToAnalysisTab();
     localStorage.removeItem("eco_nickname");
     sessionStorage.removeItem("eco_session");
     setNickname(null);
@@ -762,7 +772,7 @@ function MainContent() {
     setHasLoadedLeaderboard(false);
     setHasLoadedPointLogs(false);
     toast.success("로그아웃 되었습니다.");
-  }, []);
+  }, [resetToAnalysisTab]);
 
   const handleCarbonCategoryInputChange = useCallback(
     (key: keyof CarbonCategoryInputValues, value: string | number) => {
