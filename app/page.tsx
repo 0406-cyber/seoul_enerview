@@ -817,7 +817,7 @@ function MainContent() {
     }
   }, [nickname, electricityUsage, gasUsage, carbonCategoryInputs])
 
-  const handleSendMessage = useCallback(async (content: string) => {
+  const handleSendMessage = useCallback(async (content: string, nicknameFromTab?: string) => {
     const userMessageId = Date.now().toString();
     const userMessage: Message = {
       id: userMessageId,
@@ -839,8 +839,10 @@ function MainContent() {
     ]);
     setIsCoachingLoading(true);
 
-    if (nickname) {
-      saveChatMessage(nickname, "user", content, userMessageId).catch(console.error);
+    const effectiveNickname = nicknameFromTab?.trim() || nickname?.trim() || "";
+
+    if (effectiveNickname) {
+      saveChatMessage(effectiveNickname, "user", content, userMessageId).catch(console.error);
     }
 
     try {
@@ -849,7 +851,8 @@ function MainContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           message: content,
-          history: historyForApi
+          history: historyForApi,
+          nickname: effectiveNickname,
         }),
       });
 
@@ -878,8 +881,8 @@ function MainContent() {
         }
       }
 
-      if (nickname) {
-        saveChatMessage(nickname, "assistant", fullAssistantMessage, assistantMessageId).catch(console.error);
+      if (effectiveNickname) {
+        saveChatMessage(effectiveNickname, "assistant", fullAssistantMessage, assistantMessageId).catch(console.error);
       }
 
     } catch (e: any) {
@@ -953,7 +956,8 @@ function MainContent() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
             message: prompt,
-            history: [] 
+            history: [],
+            nickname: nickname?.trim() || "",
           }),
         });
 
@@ -1504,6 +1508,7 @@ function MainContent() {
             onSendMessage={handleSendMessage}
             onRequestAdvice={handleRequestAdvice}
             isLoading={isCoachingLoading}
+            currentNickname={nickname}
           />
         )}
 
