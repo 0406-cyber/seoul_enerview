@@ -11,9 +11,10 @@ interface Message {
 
 interface CoachingTabProps {
   messages: Message[]
-  onSendMessage: (message: string) => void
+  onSendMessage: (message: string, nickname?: string) => void
   onRequestAdvice: () => void
   isLoading: boolean
+  currentNickname?: string | null
 }
 
 export function CoachingTab({
@@ -21,6 +22,7 @@ export function CoachingTab({
   onSendMessage,
   onRequestAdvice,
   isLoading,
+  currentNickname,
 }: CoachingTabProps) {
   const [input, setInput] = useState("")
   
@@ -42,7 +44,7 @@ export function CoachingTab({
 
   const handleSend = () => {
     if (!input.trim() || isLoading) return
-    onSendMessage(input.trim())
+    onSendMessage(input.trim(), currentNickname?.trim() || undefined)
     setInput("")
   }
 

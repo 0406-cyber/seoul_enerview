@@ -150,100 +150,184 @@ export async function analyzeImageWithGemini(
 }
 
 /**
- * 멀티턴 대화 내역을 포함하여 스트리밍 방식으로 답변을 반환 (Function Calling 반영 수정본)
+ * 멀티턴 대화 내역을 포함하여 스트리밍 방식으로 답변을 반환
+ * - 직접 채팅으로 들어온 메시지도 현재 로그인 닉네임을 함께 전달할 수 있게 username 옵션을 추가했습니다.
+ * - Function Calling 응답은 원 스트림을 끝까지 소비한 뒤 다음 sendMessageStream으로 전송합니다.
  */
+type ChatHistory = { role: "user" | "model"; parts: { text: string }[] }[];
+type StreamChatOptions = {
+  modelName?: string;
+  username?: string | null;
+};
+
+type EnerviewFunctionCall = {
+  id?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+};
+
+function normalizeUsername(username?: string | null) {
+  return typeof username === "string" ? username.trim() : "";
+}
+
+function buildMessageWithUserContext(message: string, username: string) {
+  if (!username) return message;
+
+  return [
+    `[앱 컨텍스트] 현재 로그인 사용자 닉네임: ${username}`,
+    `사용량/포인트/과거 기록 조회가 필요하면 사용자에게 닉네임을 다시 묻지 말고, 함수 호출 username 인자로 반드시 "${username}"를 사용하세요.`,
+    "",
+    `[사용자 메시지]\n${message}`,
+  ].join("\n");
+}
+
+async function executeEnerviewTool(
+  call: EnerviewFunctionCall,
+  fallbackUsername: string,
+) {
+  const args = (call.args ?? {}) as Record<string, unknown>;
+  const argUsername = typeof args.username === "string" ? args.username.trim() : "";
+  const targetUser = argUsername || fallbackUsername;
+
+  if (!targetUser) {
+    return {
+      ok: false,
+      error:
+        "닉네임이 전달되지 않아 조회할 수 없습니다. 클라이언트에서 username/nickname을 API 요청 body에 포함해 주세요.",
+    };
+  }
+
+  try {
+    if (call.name === "getUsageHistory") {
+      const { getUsageHistory } = await import("./db");
+      const result = await getUsageHistory(targetUser);
+      return { ok: true, username: targetUser, result: result ?? null };
+    }
+
+    if (call.name === "getPointLogs") {
+      const { getPointLogs } = await import("./db");
+      const result = await getPointLogs(targetUser);
+      return { ok: true, username: targetUser, result: result ?? null };
+    }
+
+    return {
+      ok: false,
+      username: targetUser,
+      error: `지원하지 않는 함수 호출입니다: ${call.name ?? "unknown"}`,
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      username: targetUser,
+      error: err?.message ?? "데이터 조회 중 알 수 없는 오류가 발생했습니다.",
+    };
+  }
+}
+
 export async function* streamChatWithMessage(
   message: string,
-  history: { role: "user" | "model"; parts: { text: string }[] }[] = [],
-  modelName: string = "gemini-3-flash-preview"
+  history: ChatHistory = [],
+  modelNameOrOptions: string | StreamChatOptions = "gemini-3-flash-preview",
+  usernameArg?: string | null,
 ) {
   const ai = getAI();
   if (!ai) throw new Error("⚠️ Gemini API Key가 설정되지 않았습니다.");
+
+  const modelName =
+    typeof modelNameOrOptions === "string"
+      ? modelNameOrOptions
+      : modelNameOrOptions.modelName ?? "gemini-3-flash-preview";
+
+  const username = normalizeUsername(
+    typeof modelNameOrOptions === "string"
+      ? usernameArg
+      : modelNameOrOptions.username,
+  );
 
   const enerviewTools = [
     {
       functionDeclarations: [
         {
           name: "getUsageHistory",
-          description: "사용자의 과거 전기 사용량, 가스 사용량, 주거/교통/식단 탄소 배출량, 교통수단·비행·식단 세부 입력 이력을 데이터베이스에서 직접 조회합니다.",
+          description:
+            "사용자의 과거 전기 사용량, 가스 사용량, 주거/교통/식단 탄소 배출량, 교통수단·비행·식단 세부 입력 이력을 데이터베이스에서 직접 조회합니다.",
           parameters: {
             type: "OBJECT",
             properties: {
-              username: { type: "STRING", description: "조회할 대상 사용자의 닉네임" }
+              username: {
+                type: "STRING",
+                description:
+                  "조회할 대상 사용자의 닉네임. 앱 컨텍스트에 현재 로그인 사용자 닉네임이 있으면 그 값을 사용합니다.",
+              },
             },
-            required: ["username"]
-          }
+            required: ["username"],
+          },
         },
         {
           name: "getPointLogs",
-          description: "사용자가 에너뷰 앱 내에서 획득하거나 사용한 포인트 내역 히스토리를 조회합니다.",
+          description:
+            "사용자가 에너뷰 앱 내에서 획득하거나 사용한 포인트 내역 히스토리를 조회합니다.",
           parameters: {
             type: "OBJECT",
             properties: {
-              username: { type: "STRING", description: "포인트를 조회할 대상 사용자의 닉네임" }
+              username: {
+                type: "STRING",
+                description:
+                  "포인트를 조회할 대상 사용자의 닉네임. 앱 컨텍스트에 현재 로그인 사용자 닉네임이 있으면 그 값을 사용합니다.",
+              },
             },
-            required: ["username"]
-          }
-        }
-      ]
-    }
+            required: ["username"],
+          },
+        },
+      ],
+    },
   ];
 
   const chat = ai.chats.create({
     model: modelName,
-    history: history,
+    history,
     config: {
-      tools: enerviewTools, 
-      systemInstruction: "너는 친환경 에너지 가이드 에너뷰(Enerview) 코치야. 사용량 기반 조언 요청에는 전달된 전기·가스·주거·교통·식단·최근 추세 수치를 우선 근거로 삼고, 배출 비중이 큰 항목부터 실행 가능한 감축 행동을 제안해줘. 사용자가 과거 기록이나 포인트 조회를 요청하면 관련 함수를 알아서 호출해줘. 모든 답변은 따뜻한 한국어로 해줘."
-    }
+      tools: enerviewTools,
+      systemInstruction:
+        "너는 친환경 에너지 가이드 에너뷰(Enerview) 코치야. 사용량 기반 조언 요청에는 전달된 전기·가스·주거·교통·식단·최근 추세 수치를 우선 근거로 삼고, 배출 비중이 큰 항목부터 실행 가능한 감축 행동을 제안해줘. 앱 컨텍스트에 현재 로그인 사용자 닉네임이 있으면 닉네임을 다시 묻지 말고 해당 닉네임으로 데이터 조회 함수를 호출해. 모든 답변은 따뜻한 한국어로 해줘.",
+    },
   });
 
-  const stream = await chat.sendMessageStream({ message });
+  let nextMessage: string | any[] = buildMessageWithUserContext(message, username);
 
-  for await (const chunk of stream) {
-    if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-      for (const call of chunk.functionCalls) {
-        let functionResult = null;
-        try {
-          const args = call.args as any;
-          const targetUser = args.username;
+  // 함수 호출이 연쇄적으로 발생할 수 있으므로 최대 4회까지만 순환합니다.
+  for (let depth = 0; depth < 4; depth += 1) {
+    const stream = await chat.sendMessageStream({ message: nextMessage as any });
+    const pendingFunctionCalls: EnerviewFunctionCall[] = [];
 
-          if (call.name === "getUsageHistory") {
-            const { getUsageHistory } = await import("./db");
-            functionResult = await getUsageHistory(targetUser);
-          } else if (call.name === "getPointLogs") {
-            const { getPointLogs } = await import("./db");
-            functionResult = await getPointLogs(targetUser);
-          }
+    // 중요: follow-up 메시지를 보내기 전에 현재 스트림을 끝까지 소비합니다.
+    for await (const chunk of stream) {
+      if (chunk.functionCalls?.length) {
+        pendingFunctionCalls.push(...(chunk.functionCalls as EnerviewFunctionCall[]));
+      }
 
-          // 💡 [버그 수정 핵심 위치] 불필요한 role 래핑을 제거하고 SDK 가 규정하는 순수한 Part 규격 배열로 전송합니다.
-          const followUpStream = await chat.sendMessageStream({
-            message: [
-              {
-                functionResponse: {
-                  id: call.id, // 멀티턴 컨텍스트 정렬을 위해 고유 ID 필수 매핑
-                  name: call.name,
-                  response: { result: functionResult || "조회된 데이터가 없습니다." }
-                }
-              }
-            ]
-          });
-
-          for await (const followUpChunk of followUpStream) {
-            if (followUpChunk.text) {
-              yield followUpChunk.text;
-            }
-          }
-
-        } catch (err: any) {
-          yield `\n⚠️ [데이터 조회 실패] 내부 오류가 발생했습니다: ${err.message}\n`;
-        }
+      if (chunk.text) {
+        yield chunk.text;
       }
     }
 
-    if (chunk.text) {
-      yield chunk.text;
+    if (pendingFunctionCalls.length === 0) {
+      return;
+    }
+
+    nextMessage = [];
+    for (const call of pendingFunctionCalls) {
+      const toolResult = await executeEnerviewTool(call, username);
+
+      nextMessage.push({
+        functionResponse: {
+          id: call.id,
+          name: call.name,
+          response: toolResult,
+        },
+      });
     }
   }
-}
 
+  yield "\n⚠️ 함수 호출이 반복되어 응답 생성을 중단했습니다. 서버 로그에서 functionCalls 순환 여부를 확인해 주세요.";
+}
