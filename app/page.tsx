@@ -2,7 +2,6 @@
 
 import { useState, useCallback, useEffect, useMemo, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import dynamic from "next/dynamic"
 import { Moon, Sun } from "lucide-react"
 import { toast } from "sonner"
 import { useTheme } from "next-themes"
@@ -68,14 +67,6 @@ import {
   type PointHistoryItem,
 } from "@/components/app/point-history-modal"
 import { getTabMeta } from "@/lib/tab-meta"
-
-const CarbonMapTab = dynamic(
-  () => import("@/components/tabs/carbon-map-tab").then((mod) => mod.CarbonMapTab),
-  { 
-    ssr: false, 
-    loading: () => <div className="h-[600px] w-full bg-secondary/30 animate-pulse rounded-[32px] flex items-center justify-center text-muted-foreground font-bold">지도를 불러오는 중입니다...</div> 
-  }
-);
 
 interface Message {
   id: string
@@ -307,6 +298,11 @@ function MainContent() {
   const activeTab = searchParams.get("tab") || "analysis"
 
   const handleTabChange = (newTab: string) => {
+    if (newTab === "carbonMap") {
+      window.location.assign("https://co2map-ihrpgoaucbxrzemcuxbicl.streamlit.app/")
+      return
+    }
+
     router.push(`?tab=${newTab}`, { scroll: false })
   }
 
@@ -1569,10 +1565,6 @@ function MainContent() {
             points={points}
             onSpendPoints={spendPoints}
           />
-        )}
-
-        {activeTab === "carbonMap" && (
-          <CarbonMapTab />
         )}
 
       </AppContainer>
