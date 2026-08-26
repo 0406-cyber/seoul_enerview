@@ -32,7 +32,7 @@ export type TabMeta = {
   Icon: LucideIcon
 }
 
-export const MAIN_TAB_IDS: TabId[] = ["analysis", "coaching", "certification", "carbonMap"]
+export const MAIN_TAB_IDS: TabId[] = ["analysis", "coaching", "campaign", "certification", "carbonMap"]
 
 export const TAB_META: TabMeta[] = [
   {

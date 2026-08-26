@@ -721,27 +721,72 @@ type CampaignSubTab = "mbti" | "actions" | "story"
 
 export function CampaignTab({ nickname, points, onGrantPoints }: CampaignTabProps) {
   const [subTab, setSubTab] = useState<CampaignSubTab>("mbti")
+  const campaignProgress = Math.min(points, 500)
+  const progressPercent = Math.round((campaignProgress / 500) * 100)
 
   return (
     <div className="flex flex-col gap-6 pb-28 animate-in fade-in slide-in-from-bottom-4 duration-500">
       {/* Header */}
-      <Card className="p-6 bg-gradient-to-br from-purple-500/10 to-pink-500/5 border-purple-500/20 relative overflow-hidden">
+      <Card className="p-6 bg-gradient-to-br from-primary/15 via-emerald-500/10 to-sky-500/10 border-primary/20 relative overflow-hidden">
         <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-purple-500/20 rounded-lg">
-              <Sparkles className="w-6 h-6 text-purple-500" />
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/15 rounded-lg">
+                <Sparkles className="w-6 h-6 text-primary" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-primary mb-0.5">{nickname ? `${nickname}님을 위한` : "나를 위한"}</p>
+                <h2 className="text-xl font-bold">탄소중립 캠페인</h2>
+              </div>
             </div>
-            <h2 className="text-xl font-bold">탄소중립 캠페인</h2>
+            <div className="shrink-0 text-right">
+              <p className="text-[10px] font-bold text-muted-foreground">보유 포인트</p>
+              <p className="text-lg font-black text-primary">{points.toLocaleString()}P</p>
+            </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            게임형 콘텐츠를 통해 재미있게 탄소중립을 배우고 실천해보세요!
-            테스트를 완료하고 착한 행동을 실천할 때마다 포인트가 지급됩니다.
+            작은 행동을 오늘의 변화로 연결해보세요. 테스트와 실천을 완료할 때마다 포인트가 쌓입니다.
           </p>
+          <div className="mt-5 rounded-xl bg-background/70 p-3">
+            <div className="flex items-center justify-between text-xs mb-2">
+              <span className="font-bold">캠페인 진행도</span>
+              <span className="font-black text-primary">{campaignProgress} / 500P</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-primary/10">
+              <div className="h-full rounded-full bg-primary transition-all duration-700" style={{ width: `${progressPercent}%` }} />
+            </div>
+            <p className="mt-2 text-[10px] text-muted-foreground">
+              {campaignProgress >= 500 ? "캠페인 목표를 달성했어요!" : `다음 실천까지 ${500 - campaignProgress}P 남았어요`}
+            </p>
+          </div>
         </div>
-        <div className="absolute -right-4 -bottom-4 opacity-5 pointer-events-none">
+        <div className="absolute -right-4 -bottom-4 text-primary opacity-10 pointer-events-none">
           <Sparkles className="w-32 h-32" />
         </div>
       </Card>
+
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={() => setSubTab("actions")}
+          className="group flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 p-4 text-left transition-colors hover:bg-primary/10"
+        >
+          <span>
+            <span className="block text-[10px] font-bold text-primary">TODAY'S ACTION</span>
+            <span className="mt-1 block text-sm font-black">오늘의 행동 고르기</span>
+          </span>
+          <ChevronRight className="h-4 w-4 text-primary transition-transform group-hover:translate-x-1" />
+        </button>
+        <button
+          onClick={() => setSubTab("story")}
+          className="group flex items-center justify-between rounded-xl border border-sky-500/20 bg-sky-500/5 p-4 text-left transition-colors hover:bg-sky-500/10"
+        >
+          <span>
+            <span className="block text-[10px] font-bold text-sky-600 dark:text-sky-400">CARBON STORY</span>
+            <span className="mt-1 block text-sm font-black">하루 탄소 여행</span>
+          </span>
+          <ChevronRight className="h-4 w-4 text-sky-600 dark:text-sky-400 transition-transform group-hover:translate-x-1" />
+        </button>
+      </div>
 
       {/* Sub navigation */}
       <div className="grid grid-cols-3 gap-2">
