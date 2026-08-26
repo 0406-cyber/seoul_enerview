@@ -1,6 +1,6 @@
 "use client"
 
-import { TAB_META, MAIN_TAB_IDS } from "@/lib/tab-meta"
+import { TAB_META, MAIN_TAB_IDS, HIDDEN_USER_TAB_IDS } from "@/lib/tab-meta"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 
 interface MoreTabsSheetProps {
@@ -10,7 +10,7 @@ interface MoreTabsSheetProps {
 }
 
 export function MoreTabsSheet({ activeTab, onTabChange, children }: MoreTabsSheetProps) {
-  const subTabs = TAB_META.filter((tab) => !MAIN_TAB_IDS.includes(tab.id))
+  const subTabs = TAB_META.filter((tab) => !MAIN_TAB_IDS.includes(tab.id) && !HIDDEN_USER_TAB_IDS.includes(tab.id))
 
   return (
     <Sheet>
@@ -51,5 +51,5 @@ export function MoreTabsSheet({ activeTab, onTabChange, children }: MoreTabsShee
 }
 
 export function getSubTabs() {
-  return TAB_META.filter((tab) => !MAIN_TAB_IDS.includes(tab.id))
+  return TAB_META.filter((tab) => !MAIN_TAB_IDS.includes(tab.id) && !HIDDEN_USER_TAB_IDS.includes(tab.id))
 }

@@ -66,7 +66,7 @@ import {
   PointHistoryModal,
   type PointHistoryItem,
 } from "@/components/app/point-history-modal"
-import { getTabMeta } from "@/lib/tab-meta"
+import { getTabMeta, HIDDEN_USER_TAB_IDS } from "@/lib/tab-meta"
 
 interface Message {
   id: string
@@ -295,9 +295,11 @@ function MainContent() {
 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const activeTab = searchParams.get("tab") || "analysis"
+  const requestedTab = searchParams.get("tab") || "analysis"
+  const activeTab = HIDDEN_USER_TAB_IDS.some((tab) => tab === requestedTab) ? "analysis" : requestedTab
 
   const handleTabChange = (newTab: string) => {
+    if (HIDDEN_USER_TAB_IDS.some((tab) => tab === newTab)) return
     if (newTab === "carbonMap") {
       window.location.assign("https://co2map-ihrpgoaucbxrzemcuxbicl.streamlit.app/")
       return

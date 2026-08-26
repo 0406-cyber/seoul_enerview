@@ -171,23 +171,38 @@ interface GoodAction {
   category: "에너지" | "교통" | "소비" | "음식" | "폐기물"
   co2Save: string
   difficulty: "쉬움" | "보통" | "도전"
+  rewardPoints: number
   isDone: boolean
 }
 
 const GOOD_ACTIONS: GoodAction[] = [
-  { id: "ga-1", title: "사용하지 않는 플러그 뽑기", description: "대기전력만 차단해도 연간 57kg CO₂ 절감", icon: <Plug className="w-5 h-5" />, category: "에너지", co2Save: "57kg/년", difficulty: "쉬움", isDone: false },
-  { id: "ga-2", title: "LED 조명으로 교체하기", description: "백열등 대비 전력 소비 80% 감소", icon: <Lightbulb className="w-5 h-5" />, category: "에너지", co2Save: "138kg/년", difficulty: "쉬움", isDone: false },
-  { id: "ga-3", title: "텀블러 사용하기", description: "종이컵 대신 텀블러 사용으로 쓰레기 감소", icon: <Coffee className="w-5 h-5" />, category: "소비", co2Save: "12kg/년", difficulty: "쉬움", isDone: false },
-  { id: "ga-4", title: "대중교통 이용하기", description: "자가용 대신 지하철/버스로 출퇴근", icon: <Bike className="w-5 h-5" />, category: "교통", co2Save: "1,289kg/년", difficulty: "보통", isDone: false },
-  { id: "ga-5", title: "채식 한 끼 실천하기", description: "주 1회 채식으로 육류 소비 줄이기", icon: <Utensils className="w-5 h-5" />, category: "음식", co2Save: "50kg/년", difficulty: "쉬움", isDone: false },
-  { id: "ga-6", title: "샤워 시간 5분 줄이기", description: "하루 5분 단축으로 온수 사용량 감소", icon: <ShowerHead className="w-5 h-5" />, category: "에너지", co2Save: "145kg/년", difficulty: "쉬움", isDone: false },
-  { id: "ga-7", title: "에코백 항상 지참", description: "비닐봉투 사용 제로에 도전!", icon: <ShoppingBag className="w-5 h-5" />, category: "소비", co2Save: "5kg/년", difficulty: "쉬움", isDone: false },
-  { id: "ga-8", title: "전기차 또는 하이브리드카", description: "친환경차로 전환 시 연료비 절약 + 탄소 감축", icon: <Car className="w-5 h-5" />, category: "교통", co2Save: "2,000kg/년", difficulty: "도전", isDone: false },
-  { id: "ga-9", title: "올바른 분리배출 실천", description: "재활용 가능 자원의 완벽한 분리", icon: <Recycle className="w-5 h-5" />, category: "폐기물", co2Save: "72kg/년", difficulty: "쉬움", isDone: false },
-  { id: "ga-10", title: "냉장고 온도 적정하게", description: "냉장고 온도를 3℃→7℃로 설정", icon: <Wind className="w-5 h-5" />, category: "에너지", co2Save: "85kg/년", difficulty: "쉬움", isDone: false },
-  { id: "ga-11", title: "빨래는 모아서 한 번에", description: "세탁기 가동 횟수 줄이기", icon: <Droplets className="w-5 h-5" />, category: "에너지", co2Save: "34kg/년", difficulty: "쉬움", isDone: false },
-  { id: "ga-12", title: "걸어서 10분 거리는 걷기", description: "초근거리는 자동차 대신 도보로", icon: <Footprints className="w-5 h-5" />, category: "교통", co2Save: "76kg/년", difficulty: "쉬움", isDone: false },
+  { id: "ga-1", title: "사용하지 않는 플러그 뽑기", description: "대기전력만 차단해도 연간 57kg CO₂ 절감", icon: <Plug className="w-5 h-5" />, category: "에너지", co2Save: "57kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
+  { id: "ga-2", title: "LED 조명으로 교체하기", description: "백열등 대비 전력 소비 80% 감소", icon: <Lightbulb className="w-5 h-5" />, category: "에너지", co2Save: "138kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
+  { id: "ga-3", title: "텀블러 사용하기", description: "종이컵 대신 텀블러 사용으로 쓰레기 감소", icon: <Coffee className="w-5 h-5" />, category: "소비", co2Save: "12kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
+  { id: "ga-4", title: "대중교통 이용하기", description: "자가용 대신 지하철/버스로 출퇴근", icon: <Bike className="w-5 h-5" />, category: "교통", co2Save: "1,289kg/년", difficulty: "보통", rewardPoints: 20, isDone: false },
+  { id: "ga-5", title: "채식 한 끼 실천하기", description: "주 1회 채식으로 육류 소비 줄이기", icon: <Utensils className="w-5 h-5" />, category: "음식", co2Save: "50kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
+  { id: "ga-6", title: "샤워 시간 5분 줄이기", description: "하루 5분 단축으로 온수 사용량 감소", icon: <ShowerHead className="w-5 h-5" />, category: "에너지", co2Save: "145kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
+  { id: "ga-7", title: "에코백 항상 지참", description: "비닐봉투 사용 제로에 도전!", icon: <ShoppingBag className="w-5 h-5" />, category: "소비", co2Save: "5kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
+  { id: "ga-8", title: "전기차 또는 하이브리드카", description: "친환경차로 전환 시 연료비 절약 + 탄소 감축", icon: <Car className="w-5 h-5" />, category: "교통", co2Save: "2,000kg/년", difficulty: "도전", rewardPoints: 30, isDone: false },
+  { id: "ga-9", title: "올바른 분리배출 실천", description: "재활용 가능 자원의 완벽한 분리", icon: <Recycle className="w-5 h-5" />, category: "폐기물", co2Save: "72kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
+  { id: "ga-10", title: "냉장고 온도 적정하게", description: "냉장고 온도를 3℃→7℃로 설정", icon: <Wind className="w-5 h-5" />, category: "에너지", co2Save: "85kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
+  { id: "ga-11", title: "빨래는 모아서 한 번에", description: "세탁기 가동 횟수 줄이기", icon: <Droplets className="w-5 h-5" />, category: "에너지", co2Save: "34kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
+  { id: "ga-12", title: "걸어서 10분 거리는 걷기", description: "초근거리는 자동차 대신 도보로", icon: <Footprints className="w-5 h-5" />, category: "교통", co2Save: "76kg/년", difficulty: "쉬움", rewardPoints: 10, isDone: false },
 ]
+
+const DAILY_CHALLENGES = [
+  { title: "3분 전기 탐정", description: "교실이나 집에서 켜진 채 방치된 전자기기 3개를 찾아 끄기", icon: <Plug className="w-5 h-5" /> },
+  { title: "초록 이동 작전", description: "오늘 한 번은 자동차 대신 걷기, 자전거 또는 대중교통을 선택하기", icon: <Bike className="w-5 h-5" /> },
+  { title: "일회용품 탈출", description: "음료나 간식 하나를 다회용품으로 해결하기", icon: <Coffee className="w-5 h-5" /> },
+  { title: "냉장고 구조대", description: "유통기한이 임박한 식재료로 오늘의 메뉴를 만들기", icon: <Utensils className="w-5 h-5" /> },
+  { title: "분리배출 스피드런", description: "친구와 60초 안에 재활용품을 올바르게 분류해보기", icon: <Recycle className="w-5 h-5" /> },
+  { title: "물방울 지키기", description: "양치나 손 씻을 때 물을 잠그고 사용 시간을 줄이기", icon: <Droplets className="w-5 h-5" /> },
+]
+
+const localDateKey = () => {
+  const date = new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
 
 
 interface StoryStep {
@@ -338,8 +353,12 @@ function MbtiQuizSection({ onGrantPoints, nickname }: { onGrantPoints: (p: numbe
       setResult(topType)
       setStep("result")
       setQuizCompleted(true)
+      const rewardKey = "eco_mbti_rewarded_" + nickname
+      if (localStorage.getItem(rewardKey) !== "true") {
+        localStorage.setItem(rewardKey, "true")
+        onGrantPoints(30, "에코 MBTI 테스트 완료")
+      }
       localStorage.setItem("eco_mbti_completed_" + nickname, JSON.stringify({ type: topType }))
-      onGrantPoints(30, "에코 MBTI 테스트 완료")
     }
   }
 
@@ -352,7 +371,6 @@ function MbtiQuizSection({ onGrantPoints, nickname }: { onGrantPoints: (p: numbe
     })
     setResult(null)
     setQuizCompleted(false)
-    localStorage.removeItem("eco_mbti_completed_" + nickname)
   }
 
   if (step === "start") {
@@ -436,35 +454,41 @@ function MbtiQuizSection({ onGrantPoints, nickname }: { onGrantPoints: (p: numbe
   return null
 }
 
-function GoodActionsSection({ onGrantPoints }: { onGrantPoints: (p: number, r: string) => Promise<void> }) {
+function GoodActionsSection({ onGrantPoints, nickname }: { onGrantPoints: (p: number, r: string) => Promise<void>; nickname: string }) {
   const [actions, setActions] = useState<GoodAction[]>(GOOD_ACTIONS)
   const [filter, setFilter] = useState<string>("all")
+  const [isWorking, setIsWorking] = useState(false)
 
   useEffect(() => {
-    const saved = localStorage.getItem("eco_good_actions_done")
+    const saved = localStorage.getItem(`eco_good_actions_done_${nickname}`)
     if (saved) {
       try {
         const doneIds = JSON.parse(saved) as string[]
         setActions(prev => prev.map(a => ({ ...a, isDone: doneIds.includes(a.id) })))
       } catch {}
     }
-  }, [])
+  }, [nickname])
 
-  const toggleAction = (id: string) => {
-    setActions(prev => {
-      const updated = prev.map(a => a.id === id ? { ...a, isDone: !a.isDone } : a)
-      // Save
-      const doneIds = updated.filter(a => a.isDone).map(a => a.id)
-      localStorage.setItem("eco_good_actions_done", JSON.stringify(doneIds))
+  const toggleAction = async (id: string) => {
+    if (isWorking) return
+    const action = actions.find(item => item.id === id)
+    if (!action || action.isDone) return
 
-      // Award points on first completion
-      const action = prev.find(a => a.id === id)
-      if (action && !action.isDone) {
-        onGrantPoints(15, `착한 행동 실천: ${action.title}`)
-        toast.success(`${action.title} 인증! +15P`)
-      }
-      return updated
-    })
+    setIsWorking(true)
+    const updated = actions.map(item => item.id === id ? { ...item, isDone: true } : item)
+    setActions(updated)
+    localStorage.setItem(`eco_good_actions_done_${nickname}`, JSON.stringify(updated.filter(item => item.isDone).map(item => item.id)))
+
+    try {
+      await onGrantPoints(action.rewardPoints, `착한 행동 실천: ${action.title}`)
+      toast.success(`${action.title} 인증! +${action.rewardPoints}P`)
+    } catch (error: any) {
+      setActions(actions)
+      localStorage.setItem(`eco_good_actions_done_${nickname}`, JSON.stringify(actions.filter(item => item.isDone).map(item => item.id)))
+      toast.error(error?.message ?? "포인트 지급 중 오류가 발생했습니다.")
+    } finally {
+      setIsWorking(false)
+    }
   }
 
   const filteredActions = filter === "all" ? actions : actions.filter(a => a.category === filter)
@@ -481,7 +505,7 @@ function GoodActionsSection({ onGrantPoints }: { onGrantPoints: (p: number, r: s
           <p className="text-xs text-muted-foreground">{doneCount}/{actions.length}개 실천 중</p>
         </div>
         <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-1 rounded-full">
-          최대 +{doneCount * 15}P
+          최대 +{actions.reduce((total, action) => total + (action.isDone ? action.rewardPoints : 0), 0)}P
         </span>
       </div>
 
@@ -504,7 +528,8 @@ function GoodActionsSection({ onGrantPoints }: { onGrantPoints: (p: number, r: s
         {filteredActions.map(action => (
           <button
             key={action.id}
-            onClick={() => toggleAction(action.id)}
+            onClick={() => void toggleAction(action.id)}
+            disabled={isWorking}
             className={`w-full text-left p-3 rounded-xl border transition-all ${
               action.isDone
                 ? "border-primary/30 bg-primary/5 opacity-70"
@@ -533,6 +558,7 @@ function GoodActionsSection({ onGrantPoints }: { onGrantPoints: (p: number, r: s
                   }`}>
                     {action.difficulty}
                   </span>
+                  <span className="text-[10px] font-bold text-primary">+{action.rewardPoints}P</span>
                   <span className="text-[10px] text-muted-foreground">🌱 {action.co2Save} 절감</span>
                 </div>
               </div>
@@ -544,15 +570,15 @@ function GoodActionsSection({ onGrantPoints }: { onGrantPoints: (p: number, r: s
   )
 }
 
-function StorySection({ onGrantPoints }: { onGrantPoints: (p: number, r: string) => Promise<void> }) {
+function StorySection({ onGrantPoints, nickname }: { onGrantPoints: (p: number, r: string) => Promise<void>; nickname: string }) {
   const [currentStep, setCurrentStep] = useState(0)
   const [discoveredPoints, setDiscoveredPoints] = useState<string[]>([])
   const [isComplete, setIsComplete] = useState(false)
 
   useEffect(() => {
-    const saved = localStorage.getItem("eco_story_complete")
+    const saved = localStorage.getItem(`eco_story_complete_${nickname}`)
     if (saved) setIsComplete(true)
-  }, [])
+  }, [nickname])
 
   const step = STORY_STEPS[currentStep]
 
@@ -568,10 +594,16 @@ function StorySection({ onGrantPoints }: { onGrantPoints: (p: number, r: string)
       setCurrentStep(prev => prev + 1)
     } else {
       setIsComplete(true)
-      localStorage.setItem("eco_story_complete", "true")
+      localStorage.setItem(`eco_story_complete_${nickname}`, "true")
       const bonusPoints = discoveredPoints.length * 5
-      onGrantPoints(bonusPoints + 20, `스토리텔링 완료 (${discoveredPoints.length}개 발견)`)
-      toast.success(`🎉 하루 스토리 완료! +${bonusPoints + 20}P`)
+      const rewardKey = `eco_story_rewarded_${nickname}`
+      if (localStorage.getItem(rewardKey) !== "true") {
+        localStorage.setItem(rewardKey, "true")
+        onGrantPoints(bonusPoints + 20, `스토리텔링 완료 (${discoveredPoints.length}개 발견)`)
+        toast.success(`🎉 하루 스토리 완료! +${bonusPoints + 20}P`)
+      } else {
+        toast.success("🎉 하루 스토리를 다시 완료했어요!")
+      }
     }
   }
 
@@ -594,7 +626,7 @@ function StorySection({ onGrantPoints }: { onGrantPoints: (p: number, r: string)
             setCurrentStep(0)
             setDiscoveredPoints([])
             setIsComplete(false)
-            localStorage.removeItem("eco_story_complete")
+            localStorage.removeItem(`eco_story_complete_${nickname}`)
           }}
         >
           <RefreshCw className="w-4 h-4 mr-1" /> 다시 도전
@@ -721,8 +753,34 @@ type CampaignSubTab = "mbti" | "actions" | "story"
 
 export function CampaignTab({ nickname, points, onGrantPoints }: CampaignTabProps) {
   const [subTab, setSubTab] = useState<CampaignSubTab>("mbti")
+  const today = localDateKey()
+  const dailyChallenge = DAILY_CHALLENGES[new Date().getDate() % DAILY_CHALLENGES.length]
+  const dailyMissionKey = `eco_daily_challenge_${nickname}_${today}`
+  const [dailyClaimed, setDailyClaimed] = useState(false)
+  const [isClaimingDaily, setIsClaimingDaily] = useState(false)
   const campaignProgress = Math.min(points, 500)
   const progressPercent = Math.round((campaignProgress / 500) * 100)
+
+  useEffect(() => {
+    setDailyClaimed(localStorage.getItem(dailyMissionKey) === "true")
+  }, [dailyMissionKey])
+
+  const claimDailyChallenge = async () => {
+    if (dailyClaimed || isClaimingDaily) return
+    setIsClaimingDaily(true)
+    localStorage.setItem(dailyMissionKey, "true")
+    setDailyClaimed(true)
+    try {
+      await onGrantPoints(20, `오늘의 에코 미션: ${dailyChallenge.title}`)
+      toast.success(`미션 성공! +20P · ${dailyChallenge.title}`)
+    } catch (error: any) {
+      localStorage.removeItem(dailyMissionKey)
+      setDailyClaimed(false)
+      toast.error(error?.message ?? "미션 보상 처리 중 오류가 발생했습니다.")
+    } finally {
+      setIsClaimingDaily(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6 pb-28 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -788,6 +846,28 @@ export function CampaignTab({ nickname, points, onGrantPoints }: CampaignTabProp
         </button>
       </div>
 
+      <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+              {dailyChallenge.icon}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black tracking-widest text-amber-700 dark:text-amber-400">오늘의 미션 뽑기 · +20P</p>
+              <h3 className="mt-1 font-black">{dailyChallenge.title}</h3>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{dailyChallenge.description}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => void claimDailyChallenge()}
+            disabled={dailyClaimed || isClaimingDaily}
+            className="shrink-0 rounded-xl bg-amber-500 px-3 py-2 text-xs font-black text-white transition hover:bg-amber-600 disabled:cursor-default disabled:opacity-50"
+          >
+            {dailyClaimed ? "완료" : "미션 완료"}
+          </button>
+        </div>
+      </div>
+
       {/* Sub navigation */}
       <div className="grid grid-cols-3 gap-2">
         {[
@@ -813,8 +893,8 @@ export function CampaignTab({ nickname, points, onGrantPoints }: CampaignTabProp
       {/* Content */}
       <Card className="p-5 border-border">
         {subTab === "mbti" && <MbtiQuizSection onGrantPoints={onGrantPoints} nickname={nickname} />}
-        {subTab === "actions" && <GoodActionsSection onGrantPoints={onGrantPoints} />}
-        {subTab === "story" && <StorySection onGrantPoints={onGrantPoints} />}
+        {subTab === "actions" && <GoodActionsSection onGrantPoints={onGrantPoints} nickname={nickname} />}
+        {subTab === "story" && <StorySection onGrantPoints={onGrantPoints} nickname={nickname} />}
       </Card>
     </div>
   )
